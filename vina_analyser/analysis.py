@@ -34,7 +34,9 @@ RMSD_SUCCESS_CUTOFF = 2.0
 # depends on floating-point noise in the last digits.
 SCORE_DECIMALS = 3
 
-# RMSD beyond this is almost always the wrong reference or the wrong box, not a pose.
+# A best pose this far from the reference almost always means the wrong reference file
+# or the wrong box. Lower-ranked poses are expected to sit far away, since they are
+# alternative binding modes, so the check applies to the best pose only.
 IMPLAUSIBLE_RMSD = 10.0
 
 LABELS = {
@@ -513,14 +515,15 @@ def redocking_rmsd(
             value = None
             if problem is None and atoms:
                 value = heavy_atom_rmsd(atoms, reference_heavy)
-                if value > IMPLAUSIBLE_RMSD:
+                if value > IMPLAUSIBLE_RMSD and row.pose == 1:
                     issues.append(
                         Issue(
                             "warning",
                             "implausible_rmsd",
-                            f"{target} / {run_ligand} / seed {seed} pose {row.pose}: RMSD "
-                            f"{value:.1f} Å. A value this large usually means the "
-                            "reference belongs to a different receptor or box.",
+                            f"{target} / {run_ligand} / seed {seed}: the best pose is "
+                            f"{value:.1f} Å from the reference. A value this large "
+                            "usually means the reference belongs to a different receptor "
+                            "or grid box, rather than that the docking failed.",
                             row.source_file,
                         )
                     )

@@ -567,6 +567,16 @@ def test_implausible_rmsd_is_warned_about(real, reference):
     assert "implausible_rmsd" in codes(result.issues)
 
 
+def test_alternative_binding_modes_are_not_called_implausible(real, reference):
+    result = redocking_rmsd(real, reference, ligand="imatinib_1iep")
+    messages = [i.message for i in result.issues if i.code == "implausible_rmsd"]
+    # Poses 2+ on 1iep are different binding modes about 12 A from the crystal pose,
+    # which is expected. Only the cross-docked 5x72 best pose signals a wrong reference.
+    assert len(messages) == 1
+    assert "5x72" in messages[0]
+    assert "best pose" in messages[0]
+
+
 def test_reference_outside_the_grid_box_is_warned_about(real, reference):
     result = redocking_rmsd(real, reference, runs=real.runs)
     message = next(i.message for i in result.issues if i.code == "reference_outside_box")
