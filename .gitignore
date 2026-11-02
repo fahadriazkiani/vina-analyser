@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 build/
 *.egg-info/
+
+# Generated figures: regenerate with scripts/make_figures.py
+figures/
