@@ -89,14 +89,29 @@ class ParsedName:
     kind: str  # "pdbqt" or "log"
 
 
+@dataclass(frozen=True)
+class Atom:
+    """One ATOM/HETATM line: the name, the AutoDock type and the coordinates."""
+
+    name: str
+    atom_type: str
+    x: float
+    y: float
+    z: float
+
+
 @dataclass
 class PdbqtPose:
     pose: int
     affinity: float | None = None
     rmsd_lb: float | None = None
     rmsd_ub: float | None = None
-    atom_types: list[str] = field(default_factory=list)
+    atoms: list[Atom] = field(default_factory=list)
     has_flexible_residues: bool = False
+
+    @property
+    def atom_types(self) -> list[str]:
+        return [atom.atom_type for atom in self.atoms]
 
 
 @dataclass
@@ -136,6 +151,8 @@ class ParsedResults:
     poses: pd.DataFrame  # one row per pose
     runs: pd.DataFrame  # one row per docking run
     issues: list[Issue]
+    # {(target, ligand, seed, pose): [Atom, ...]} for poses that have coordinates.
+    coordinates: dict[tuple, list[Atom]] = field(default_factory=dict)
 
 
 def decode_text(data: bytes) -> str:
@@ -181,7 +198,7 @@ def parse_filename(name: str) -> ParsedName | None:
     return ParsedName(target, ligand, seed, kind)
 
 
-def _is_heavy(atom_type: str) -> bool:
+def is_heavy_atom(atom_type: str) -> bool:
     return atom_type in HEAVY_TYPES or GLUE_CARBON.fullmatch(atom_type) is not None
 
 
@@ -190,9 +207,14 @@ def _unknown_atom_types(atom_types: Iterable[str]) -> set[str]:
         atom_type
         for atom_type in atom_types
         if atom_type not in HYDROGEN_TYPES
-        and not _is_heavy(atom_type)
+        and not is_heavy_atom(atom_type)
         and not MACROCYCLE_PSEUDO_ATOM.fullmatch(atom_type)
     }
+
+
+def heavy_atoms_of(atoms: Iterable["Atom"]) -> list["Atom"]:
+    """Keep only real non-hydrogen atoms, in file order (CG* kept, G* dropped)."""
+    return [atom for atom in atoms if is_heavy_atom(atom.atom_type)]
 
 
 def count_heavy_atoms(atom_types: Iterable[str]) -> int | None:
@@ -200,7 +222,7 @@ def count_heavy_atoms(atom_types: Iterable[str]) -> int | None:
     atom_types = list(atom_types)
     if _unknown_atom_types(atom_types):
         return None
-    return sum(_is_heavy(atom_type) for atom_type in atom_types)
+    return sum(is_heavy_atom(atom_type) for atom_type in atom_types)
 
 
 def parse_pdbqt(text: str) -> PdbqtData:
@@ -241,8 +263,7 @@ def parse_pdbqt(text: str) -> PdbqtData:
         elif line.startswith("REMARK VINA RESULT:"):
             _read_vina_result(line, current, data)
         elif line.startswith(("ATOM", "HETATM")):
-            # Read col 78 to the end of the line, not just cols 78-79: "CG0" has 3 letters.
-            current.atom_types.append(line[77:].strip())
+            _read_atom(line, current, data)
         elif line.startswith("BEGIN_RES"):
             current.has_flexible_residues = True
 
@@ -257,6 +278,19 @@ def parse_pdbqt(text: str) -> PdbqtData:
             )
         )
     return data
+
+
+def _read_atom(line: str, pose: PdbqtPose, data: PdbqtData) -> None:
+    # Fixed-width PDB columns: name 13-16, x/y/z 31-38, 39-46, 47-54. The AutoDock type
+    # runs from col 78 to the end of the line, not just cols 78-79: "CG0" has 3 letters.
+    try:
+        x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+    except ValueError:
+        data.issues.append(
+            Issue("warning", "malformed_atom", f"Unreadable coordinates: {line!r}")
+        )
+        return
+    pose.atoms.append(Atom(line[12:16].strip(), line[77:].strip(), x, y, z))
 
 
 def _truncated(pose: int) -> Issue:
@@ -390,7 +424,7 @@ def load_results(
     for run in built:
         counts[run["key"]] = counts.get(run["key"], 0) + 1
 
-    pose_rows, run_rows = [], []
+    pose_rows, run_rows, coordinates = [], [], {}
     for run in built:
         if counts[run["key"]] > 1:
             target, ligand, seed = run["key"]
@@ -400,6 +434,7 @@ def load_results(
             continue
         pose_rows += run["poses"]
         run_rows.append(run["run"])
+        coordinates.update(run["coordinates"])
         issues += run["issues"]
 
     sort_keys = ["target", "ligand", "seed"]
@@ -407,6 +442,7 @@ def load_results(
         poses=_frame(pose_rows, POSE_COLUMNS).sort_values([*sort_keys, "pose"], ignore_index=True),
         runs=_frame(run_rows, RUN_COLUMNS).sort_values(sort_keys, ignore_index=True),
         issues=issues,
+        coordinates=coordinates,
     )
 
 
@@ -534,7 +570,18 @@ def _build_run(
         "max_log_pdbqt_diff": largest_diff,
         **_header_values(log),
     }
-    return {"key": (target, ligand, seed), "poses": rows, "run": run_row, "issues": issues}
+    coordinates = {
+        (target, ligand, seed, pose.pose): pose.atoms
+        for pose in (pdbqt.poses if pdbqt else [])
+        if pose.atoms
+    }
+    return {
+        "key": (target, ligand, seed),
+        "poses": rows,
+        "run": run_row,
+        "issues": issues,
+        "coordinates": coordinates,
+    }
 
 
 def _pose_row(target, ligand, seed, number, pose, mode, pdbqt_file, log_file, issues) -> dict:
