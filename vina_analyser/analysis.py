@@ -53,6 +53,15 @@ LABELS = {
 }
 
 NOTES = {
+    # Fixed text, shown with every analysis output.
+    "scoring_error": (
+        "Vina's scoring error is roughly 2-3 kcal/mol; score differences smaller than "
+        "this should not be interpreted as differences in binding."
+    ),
+    "delta_direction": (
+        "In the Δ column, negative = more favourable score than control, and positive "
+        "= less favourable."
+    ),
     "affinity": (
         "Vina scores are estimates from an empirical scoring function. They are not "
         "measured binding affinities and say nothing about activity in a cell or an "
@@ -168,6 +177,7 @@ class ControlComparison:
 class RmsdResult:
     table: pd.DataFrame
     issues: list[Issue] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -175,6 +185,12 @@ class AnalysisResult:
     best: pd.DataFrame  # one row per target x ligand, ranked within the target
     seeds: pd.DataFrame  # one row per target x ligand, across repeat runs
     issues: list[Issue] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+
+def output_notes(*keys: str) -> list[str]:
+    """The limitations that travel with an output table, scoring error always first."""
+    return [NOTES["scoring_error"], NOTES["affinity"], *(NOTES[key] for key in keys)]
 
 
 def element_of(atom_type: str) -> str | None:
@@ -509,6 +525,11 @@ def redocking_rmsd(
             issues.append(problem)
         else:
             matched_any = True
+            # Names are not used for matching, so a difference is a warning, not a
+            # refusal: the elements already line up in order.
+            name_warning = _name_warning(sample, reference_heavy, target, run_ligand)
+            if name_warning is not None:
+                issues.append(name_warning)
 
         for row in group.itertuples(index=False):
             atoms = results.coordinates.get((target, run_ligand, seed, row.pose), [])
@@ -552,7 +573,11 @@ def redocking_rmsd(
     frame = pd.DataFrame(rows, columns=list(RMSD_COLUMNS), dtype="object").astype(
         dict(RMSD_COLUMNS)
     )
-    return RmsdResult(frame.sort_values(["target", "ligand", "seed", "pose"], ignore_index=True), issues)
+    return RmsdResult(
+        frame.sort_values(["target", "ligand", "seed", "pose"], ignore_index=True),
+        issues,
+        output_notes("rmsd_vs_reference", "within_2A"),
+    )
 
 
 def _reference_problem(
@@ -584,6 +609,26 @@ def _reference_problem(
                 f"{target} / {ligand}: atom {position} is {pose_element} in the pose but "
                 f"{reference_element} in the reference, so the atoms are not the same "
                 f"molecule in the same order. Pose composition: {_composition(pose_heavy)}.",
+                "",
+            )
+    return None
+
+
+def _name_warning(
+    atoms: Sequence[Atom], reference_heavy: Sequence[Atom], target: str, ligand: str
+) -> Issue | None:
+    """Warn when the atom names differ, although the elements match in order."""
+    for position, (pose_atom, reference_atom) in enumerate(
+        zip(heavy_atoms_of(atoms), reference_heavy), 1
+    ):
+        if pose_atom.name != reference_atom.name:
+            return Issue(
+                "warning",
+                "atom_name_mismatch",
+                f"{target} / {ligand}: atom {position} is named {pose_atom.name!r} in the "
+                f"pose but {reference_atom.name!r} in the reference. The elements match in "
+                "order, so the RMSD was still computed, but check that the two files "
+                "describe the same molecule.",
                 "",
             )
     return None
@@ -634,8 +679,15 @@ def analyse(results: ParsedResults, control: str | None = None) -> AnalysisResul
     """Build the ranked best-pose table and the seed summary in one step."""
     best = rank_per_target(ligand_efficiency(best_per_ligand(results.poses)))
     issues = list(results.issues)
+    keys = ["ligand_efficiency", "seed_summary"]
     if control is not None:
         comparison = compare_to_control(best, control, runs=results.runs)
         best, extra = comparison.table, comparison.issues
         issues += extra
-    return AnalysisResult(best=best, seeds=seed_summary(results.poses), issues=issues)
+        keys += ["delta_vs_control", "delta_direction"]
+    return AnalysisResult(
+        best=best,
+        seeds=seed_summary(results.poses),
+        issues=issues,
+        notes=output_notes(*keys),
+    )

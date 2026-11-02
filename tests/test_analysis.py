@@ -532,6 +532,50 @@ def test_rmsd_label_names_the_user_supplied_reference_and_warns():
     assert "superposition" in note or "superimpose" in note
 
 
+def rename_atoms(text):
+    """Rewrite the atom-name column, leaving types and coordinates untouched."""
+    lines = []
+    for index, line in enumerate(text.splitlines()):
+        if line.startswith(("ATOM", "HETATM")):
+            line = line[:12] + f"Z{index:03d}" + line[16:]
+        lines.append(line + "\n")
+    return "".join(lines)
+
+
+def test_atom_name_mismatch_warns_but_rmsd_is_still_computed(real):
+    renamed = parse_reference(
+        rename_atoms(CRYSTAL_IMATINIB.read_text()),
+        filename="renamed.pdbqt",
+        is_experimental_pose=True,
+    )
+    result = redocking_rmsd(real, renamed, ligand="imatinib_1iep")
+    table = result.table
+    best = table[(table["target"] == "1iep") & (table["seed"] == 42) & (table["pose"] == 1)]
+    # Elements still line up, so the value is unchanged from the named reference.
+    assert best["rmsd_vs_reference"].iloc[0] == pytest.approx(0.91, abs=0.02)
+    issue = next(i for i in result.issues if i.code == "atom_name_mismatch")
+    assert issue.severity == "warning"
+    # The message names both sides at the first differing position.
+    assert "'N'" in issue.message  # imatinib's first heavy atom
+    assert "Z0" in issue.message  # the renamed reference
+
+
+def test_matching_atom_names_raise_no_warning(real, reference):
+    result = redocking_rmsd(real, reference, ligand="imatinib_1iep")
+    assert "atom_name_mismatch" not in codes(result.issues)
+
+
+def test_atom_name_mismatch_is_reported_once_per_run(real):
+    renamed = parse_reference(
+        rename_atoms(CRYSTAL_IMATINIB.read_text()),
+        filename="renamed.pdbqt",
+        is_experimental_pose=True,
+    )
+    result = redocking_rmsd(real, renamed, ligand="imatinib_1iep")
+    # Four imatinib runs on 1iep plus one on 5x72, not one warning per pose.
+    assert len([i for i in result.issues if i.code == "atom_name_mismatch"]) == 5
+
+
 def test_different_sized_ligand_is_reported_as_not_applicable(real, reference):
     # p59 has 24 heavy atoms against the reference's 37: a different molecule.
     result = redocking_rmsd(real, reference, ligand="p59_5x72")
@@ -628,3 +672,38 @@ def test_analyse_passes_parser_issues_through():
     result = analyse(results)
     assert result.best.empty
     assert "missing_pdbqt" in codes(result.issues)
+
+
+# --------------------------------------------------------- fixed limitations notes
+
+
+def test_scoring_error_note_is_the_agreed_fixed_text():
+    assert NOTES["scoring_error"] == (
+        "Vina's scoring error is roughly 2-3 kcal/mol; score differences smaller than "
+        "this should not be interpreted as differences in binding."
+    )
+
+
+def test_delta_note_states_which_direction_is_better():
+    assert "negative = more favourable score than control" in NOTES["delta_direction"]
+
+
+def test_analysis_output_carries_the_scoring_error_and_delta_notes(real):
+    result = analyse(real, control="imatinib_1iep")
+    assert NOTES["scoring_error"] in result.notes
+    assert NOTES["delta_direction"] in result.notes
+    assert NOTES["ligand_efficiency"] in result.notes
+    assert NOTES["seed_summary"] in result.notes
+
+
+def test_analysis_without_a_control_omits_the_control_notes(real):
+    result = analyse(real)
+    assert NOTES["scoring_error"] in result.notes
+    assert all("control" not in note for note in result.notes)
+
+
+def test_rmsd_output_carries_its_own_notes(real, reference):
+    result = redocking_rmsd(real, reference, ligand="imatinib_1iep")
+    assert NOTES["rmsd_vs_reference"] in result.notes
+    assert NOTES["within_2A"] in result.notes
+    assert NOTES["scoring_error"] in result.notes
