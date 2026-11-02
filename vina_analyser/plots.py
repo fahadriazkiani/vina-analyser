@@ -133,7 +133,7 @@ def affinity_heatmap(best: pd.DataFrame):
     grid = grid.sort_index().sort_index(axis=1)
     values = np.ma.masked_invalid(grid.to_numpy(dtype=float))
 
-    height = 2.2 + 0.7 * len(grid.index)
+    height = 3.4 + 0.7 * len(grid.index)
     figure, axes = _new_figure(height)
     # A pair that was never docked shows as a blank cell, never as a zero.
     colours = plt.get_cmap(HEATMAP_CMAP).with_extremes(bad=MISSING_COLOUR)
@@ -141,8 +141,6 @@ def affinity_heatmap(best: pd.DataFrame):
 
     axes.set_xticks(range(len(grid.columns)), short_labels(grid.columns), rotation=45, ha="right")
     axes.set_yticks(range(len(grid.index)), list(grid.index))
-    axes.set_xlabel("Ligand")
-    axes.set_ylabel("Target")
     for spine in axes.spines.values():
         spine.set_visible(False)
     axes.tick_params(length=0)
@@ -162,7 +160,8 @@ def affinity_heatmap(best: pd.DataFrame):
                 color=_readable_on(image.cmap(image.norm(value))),
             )
 
-    bar = figure.colorbar(image, ax=axes)
+    # Horizontal: the label is long, and upright it was clipped at the figure edge.
+    bar = figure.colorbar(image, ax=axes, orientation="horizontal", fraction=0.12, pad=0.06)
     bar.set_label(COLOURBAR_LABEL, fontsize=6)
     bar.ax.tick_params(labelsize=6)
     figure.set_label(heatmap_caption())
@@ -210,16 +209,24 @@ def ranked_bars(best: pd.DataFrame, target: str, control: str | None = None):
             label="control compound" if is_control else None,
             height=0.7,
         )
-        # Label at the open end of the bar, just outside it.
-        axes.text(score, position, f"{score:.2f}", va="center", ha="right", fontsize=6)
+        # Just inside the tip of the bar: outside it, the minus sign was cut off.
+        axes.text(
+            score + abs(score) * 0.02,
+            position,
+            f"{score:.2f}",
+            va="center",
+            ha="left",
+            fontsize=6,
+            color="white",
+        )
 
     axes.set_yticks(list(positions), short_labels(ligands))
     axes.set_xlabel(SCORE_LABEL)
-    axes.set_title(f"Target {target}")
+    axes.set_title(f"Target {target}", loc="left")
     axes.invert_yaxis()  # best score at the top
-    axes.margins(x=0.12)
+    axes.margins(x=0.02)
     if highlighted:
-        axes.legend(frameon=False, loc="lower right")
+        axes.legend(frameon=False, loc="lower right", bbox_to_anchor=(1.0, 1.0))
     figure.set_label(ranked_bars_caption(target))
     return figure
 
@@ -249,7 +256,7 @@ def pose_strip(poses: pd.DataFrame, target: str):
     ligands = sorted(rows["ligand"].unique())
     index_of = {ligand: position for position, ligand in enumerate(ligands)}
 
-    height = 5.5
+    height = 6.4
     figure, axes = _new_figure(height)
     generator = np.random.default_rng(JITTER_SEED)  # reseeded per call, so reproducible
 
@@ -309,19 +316,19 @@ def pose_strip(poses: pd.DataFrame, target: str):
 
     axes.set_xticks(range(len(ligands)), short_labels(ligands), rotation=45, ha="right")
     axes.set_ylabel(SCORE_LABEL)
-    axes.set_title(f"Target {target}: all poses")
     axes.set_xlim(-0.6, len(ligands) - 0.4)
 
     handles = [handle for handle in axes.collections if len(handle.get_offsets())]
     if handles:
-        axes.legend(handles=handles, frameon=False, loc="lower center", ncol=1)
+        axes.legend(handles=handles, frameon=False, loc="lower left", bbox_to_anchor=(0, 1.0))
     figure.set_label(pose_strip_caption(target))
     return figure
 
 
 def pose_strip_caption(target: str) -> str:
     return (
-        f"Every pose score for target {target}, one column per ligand. Filled markers "
+        f"Every pose score for target {target}, one column per ligand. Repeat runs of "
+        "the same ligand with different seeds share a column. Filled markers "
         "are poses present in the output PDBQT. Hollow markers are modes that appear "
         "only in the log, outside Vina's energy_range, so they have no coordinates and "
         "their scores are the log's rounded values. A box (median and quartiles) is "

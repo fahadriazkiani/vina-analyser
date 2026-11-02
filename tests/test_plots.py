@@ -149,7 +149,9 @@ def test_heatmap_uses_one_shared_scale_in_real_units(best):
 def test_colourbar_is_labelled_with_units_and_direction(best):
     figure = affinity_heatmap(best)
     assert COLOURBAR_LABEL == "Vina score (kcal/mol), more negative = more favourable"
-    assert figure.axes[-1].get_ylabel() == COLOURBAR_LABEL
+    colourbar_axes = figure.axes[-1]
+    # Horizontal colour bar, so the label is its x label.
+    assert (colourbar_axes.get_xlabel() or colourbar_axes.get_ylabel()) == COLOURBAR_LABEL
 
 
 def test_more_favourable_scores_are_darker(best):
@@ -316,6 +318,8 @@ def test_pose_strip_caption_explains_markers_and_the_box_rule():
     assert "log" in caption.lower()
     assert str(MIN_POSES_FOR_BOX) in caption
     assert NOTES["scoring_error"] in caption
+    # Imatinib's column on 1iep pools four seeds, so the caption has to say so.
+    assert "seeds share a column" in caption
 
 
 def test_pose_strip_jitter_is_reproducible(real):
