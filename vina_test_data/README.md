@@ -30,14 +30,15 @@ receptors/  1iep_receptor.pdbqt (ABL kinase), 5x72_receptor.pdbqt,
             1iep_receptorH.pdb, 1iep_ligand.sdf (crystal imatinib, for RMSD reference)
 ligands/    5 input ligands (PDBQT). imatinib_1iep.pdbqt keeps crystal coordinates.
 configs/    Vina box configs
-results/    13 Vina output PDBQT files (9 poses each)
+results/    13 Vina output PDBQT files (3-9 poses each, see quirk 1)
 logs/       13 Vina stdout logs (contain the affinity / RMSD table)
 ```
 File naming: `<target>__<ligand>[_seedN]_out.pdbqt` and `<target>__<ligand>[_seedN].log`
 
 Ligands: `imatinib_1iep`, `p59_5x72`, `p69_5x72`, `lig_1s63` (from a zinc
 metalloprotein example; docked here WITHOUT zinc parameters), `bace1_macrocycle`
-(contains Vina macrocycle pseudo-atoms G0/CG0, a useful parser edge case).
+(contains macrocycle atom types: real carbons CG0 and pseudo-atoms G0, a useful
+parser edge case).
 
 ## Known values (use these as test expectations)
 Best (mode 1) affinity, kcal/mol:
@@ -59,8 +60,10 @@ no symmetry correction): seed42 0.91 Å, seed1 0.90 Å, seed2 0.34 Å, seed3 0.9
    all other files have 9.
 2. **Precision differs.** Logs round (e.g. -13.27); PDBQT `REMARK VINA RESULT` keeps 3
    decimals (-13.273). Compare with a tolerance of 0.01.
-3. **Macrocycle pseudo-atoms** (G0, CG0) appear in `*bace1_macrocycle*` files and must not
-   be counted as heavy atoms.
+3. **Macrocycle atom types** appear in `*bace1_macrocycle*` files. CG0 atoms are real carbons
+   (Meeko's glue carbons, where the ring was opened) and count as heavy atoms. G0 atoms
+   (named *1, *2) are pseudo-atoms on top of their partner CG0 and must not be counted.
+   bace1_macrocycle has 38 heavy atoms (43 atom lines = 38 heavy + 3 HD + 2 G0).
 
 Note: Vina 1.2.x writes results to stdout, not a `--log` file; logs here are captured stdout.
 Each output PDBQT also stores the score in `REMARK VINA RESULT:` lines. These are an
