@@ -28,7 +28,11 @@ HEAVY_TYPES = {
     "F", "Cl", "CL", "Br", "BR", "I", "Si", "SI", "B", "At",
     "Mg", "MG", "Ca", "CA", "Mn", "MN", "Fe", "FE", "Zn", "ZN",
 }
-MACROCYCLE_PSEUDO_ATOM = re.compile(r"C?G\d+")  # G0, G1, CG0, CG1, ...
+# Meeko opens a macrocycle ring for docking and marks the two cut ends. CG0, CG1, ... are
+# REAL carbons bonded into the ligand, so they count. G0, G1, ... (named *1, *2) are dummy
+# atoms sitting on top of the partner CG carbon, so they don't.
+GLUE_CARBON = re.compile(r"CG\d+")
+MACROCYCLE_PSEUDO_ATOM = re.compile(r"G\d+")
 
 POSE_COLUMNS = {
     "target": "str",
@@ -177,12 +181,16 @@ def parse_filename(name: str) -> ParsedName | None:
     return ParsedName(target, ligand, seed, kind)
 
 
+def _is_heavy(atom_type: str) -> bool:
+    return atom_type in HEAVY_TYPES or GLUE_CARBON.fullmatch(atom_type) is not None
+
+
 def _unknown_atom_types(atom_types: Iterable[str]) -> set[str]:
     return {
         atom_type
         for atom_type in atom_types
         if atom_type not in HYDROGEN_TYPES
-        and atom_type not in HEAVY_TYPES
+        and not _is_heavy(atom_type)
         and not MACROCYCLE_PSEUDO_ATOM.fullmatch(atom_type)
     }
 
@@ -192,7 +200,7 @@ def count_heavy_atoms(atom_types: Iterable[str]) -> int | None:
     atom_types = list(atom_types)
     if _unknown_atom_types(atom_types):
         return None
-    return sum(atom_type in HEAVY_TYPES for atom_type in atom_types)
+    return sum(_is_heavy(atom_type) for atom_type in atom_types)
 
 
 def parse_pdbqt(text: str) -> PdbqtData:

@@ -65,7 +65,7 @@ HEAVY_ATOMS = {
     "p59_5x72": 24,
     "p69_5x72": 24,
     "lig_1s63": 29,
-    "bace1_macrocycle": 36,
+    "bace1_macrocycle": 38,
 }
 
 POSE_COLUMNS = [
@@ -156,9 +156,22 @@ def test_parse_filename_refuses_to_guess(name):
 # ------------------------------------------------------------------ heavy atoms
 
 
-def test_heavy_count_excludes_hydrogens_and_pseudo_atoms():
+def test_heavy_count_excludes_hydrogens_and_g_pseudo_atoms():
     types = ["C", "A", "N", "OA", "Cl", "H", "HD", "HS", "G0", "G1", "CG0", "CG1"]
-    assert count_heavy_atoms(types) == 5
+    assert count_heavy_atoms(types) == 7  # 5 ordinary heavy atoms + CG0 + CG1
+
+
+def test_glue_carbons_count_as_carbon_but_g_pseudo_atoms_do_not():
+    # CG* are real carbons where Meeko opened the ring; G* are dummies on top of them.
+    assert count_heavy_atoms(["CG0", "CG1", "CG12"]) == 3
+    assert count_heavy_atoms(["G0", "G1", "G12"]) == 0
+    assert count_heavy_atoms(["C", "CG0", "G0"]) == 2
+
+
+def test_truncated_macrocycle_types_are_not_accepted():
+    # "CG" is what reading only cols 78-79 would produce from "CG0".
+    assert count_heavy_atoms(["CG"]) is None
+    assert count_heavy_atoms(["G"]) is None
 
 
 def test_heavy_count_is_unknown_when_an_atom_type_is_unrecognised():
@@ -171,15 +184,15 @@ def test_heavy_atoms_per_ligand_in_real_files(real, ligand, expected):
     assert set(rows.loc[rows["has_coordinates"], "heavy_atoms"]) == {expected}
 
 
-def test_macrocycle_pseudo_atoms_are_read_whole_and_excluded():
+def test_macrocycle_atom_types_are_read_whole_and_counted_correctly():
     pose = parse_pdbqt((RESULTS / "1iep__bace1_macrocycle_out.pdbqt").read_text()).poses[0]
-    # 43 atom lines = 36 heavy + 3 HD + 2 G0 + 2 CG0.
+    # 43 atom lines = 38 heavy (including 2 CG0 carbons) + 3 HD + 2 G0.
     # "CG0" is 3 characters: reading only cols 78-79 would cut it down to "CG".
     assert len(pose.atom_types) == 43
     assert pose.atom_types.count("CG0") == 2
     assert pose.atom_types.count("G0") == 2
     assert "CG" not in pose.atom_types
-    assert count_heavy_atoms(pose.atom_types) == 36
+    assert count_heavy_atoms(pose.atom_types) == 38
 
 
 # ------------------------------------------------------------------ table shape
