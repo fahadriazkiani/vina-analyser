@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vina-analyser"
+version = "0.1.0"
+description = "Reproducible tables and figures from AutoDock Vina output files"
+requires-python = ">=3.11"
+# Only what the package imports so far; later phases add to this list.
+dependencies = ["pandas>=3.1,<4"]
+
+[tool.setuptools]
+# Listed explicitly: otherwise setuptools also sees tests/ and vina_test_data/.
+packages = ["vina_analyser"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

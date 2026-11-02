@@ -1,0 +1,7 @@
+# Local virtual environment and Python caches: machine-specific, never committed
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+*.egg-info/

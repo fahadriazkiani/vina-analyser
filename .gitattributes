@@ -1,0 +1,2 @@
+# Raw data must stay byte-identical on every OS: no line-ending conversion.
+vina_test_data/** -text
