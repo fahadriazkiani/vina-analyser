@@ -13,6 +13,8 @@ Design rules:
 import functools
 from pathlib import Path
 
+MINUS = "−"  # typographic minus, matching matplotlib's own axis ticks
+
 import matplotlib
 
 matplotlib.use("Agg")  # before pyplot: no display is ever needed
@@ -153,7 +155,7 @@ def affinity_heatmap(best: pd.DataFrame):
             axes.text(
                 column,
                 row,
-                f"{value:.2f}",
+                format_score(value),
                 ha="center",
                 va="center",
                 fontsize=6,
@@ -166,6 +168,19 @@ def affinity_heatmap(best: pd.DataFrame):
     bar.ax.tick_params(labelsize=6)
     figure.set_label(heatmap_caption())
     return figure
+
+
+def format_score(value: float, decimals: int = 2) -> str:
+    """Format a score with the Unicode minus sign the axis ticks already use."""
+    return f"{value:.{decimals}f}".replace("-", MINUS)
+
+
+def _tick_step(span: float) -> float:
+    """A whole-number tick step, so every ranked chart is spaced alike."""
+    for step in (1, 2, 4, 5, 10, 20, 50):
+        if span / step <= 5:
+            return step
+    return 100
 
 
 def _readable_on(rgba) -> str:
@@ -202,25 +217,28 @@ def ranked_bars(best: pd.DataFrame, target: str, control: str | None = None):
 
     for position, (ligand, score) in enumerate(zip(ligands, scores)):
         is_control = highlighted and ligand == control
+        colour = CONTROL_COLOUR if is_control else BAR_COLOUR
         axes.barh(
             position,
             score,
-            color=CONTROL_COLOUR if is_control else BAR_COLOUR,
+            color=colour,
             label="control compound" if is_control else None,
             height=0.7,
         )
         # Just inside the tip of the bar: outside it, the minus sign was cut off.
+        # The text colour follows the bar, since the control's orange is light.
         axes.text(
             score + abs(score) * 0.02,
             position,
-            f"{score:.2f}",
+            format_score(score),
             va="center",
             ha="left",
             fontsize=6,
-            color="white",
+            color=_readable_on(matplotlib.colors.to_rgba(colour)),
         )
 
     axes.set_yticks(list(positions), short_labels(ligands))
+    axes.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(_tick_step(abs(min(scores)))))
     axes.set_xlabel(SCORE_LABEL)
     axes.set_title(f"Target {target}", loc="left")
     axes.invert_yaxis()  # best score at the top
@@ -316,6 +334,7 @@ def pose_strip(poses: pd.DataFrame, target: str):
 
     axes.set_xticks(range(len(ligands)), short_labels(ligands), rotation=45, ha="right")
     axes.set_ylabel(SCORE_LABEL)
+    axes.invert_yaxis()  # more favourable (more negative) at the top, as in the bars
     axes.set_xlim(-0.6, len(ligands) - 0.4)
 
     handles = [handle for handle in axes.collections if len(handle.get_offsets())]
@@ -327,7 +346,8 @@ def pose_strip(poses: pd.DataFrame, target: str):
 
 def pose_strip_caption(target: str) -> str:
     return (
-        f"Every pose score for target {target}, one column per ligand. Repeat runs of "
+        f"Every pose score for target {target}, one column per ligand, most "
+        "favourable at the top. Repeat runs of "
         "the same ligand with different seeds share a column. Filled markers "
         "are poses present in the output PDBQT. Hollow markers are modes that appear "
         "only in the log, outside Vina's energy_range, so they have no coordinates and "

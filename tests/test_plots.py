@@ -132,9 +132,9 @@ def test_heatmap_annotates_every_known_value(best):
     figure = affinity_heatmap(best)
     axes = figure.axes[0]
     annotations = {text.get_text() for text in axes.texts}
-    assert "-13.27" in annotations
-    assert "-6.37" in annotations  # bace1 on 1iep, rounded from -6.367
-    assert "-11.00" in annotations  # p59 on 5x72, the PDBQT's -10.996
+    assert "−13.27" in annotations
+    assert "−6.37" in annotations  # bace1 on 1iep, rounded from -6.367
+    assert "−11.00" in annotations  # p59 on 5x72, the PDBQT's -10.996
     assert len(axes.texts) == 10
 
 
@@ -197,8 +197,8 @@ def test_one_bar_per_ligand_ordered_best_first(best):
 def test_bars_are_labelled_with_their_scores(best):
     figure = ranked_bars(best, "1iep")
     texts = {text.get_text() for text in figure.axes[0].texts}
-    assert "-13.27" in texts
-    assert "-6.37" in texts
+    assert "−13.27" in texts
+    assert "−6.37" in texts
 
 
 def test_control_bar_is_highlighted_and_named_in_the_legend(best):
@@ -209,6 +209,41 @@ def test_control_bar_is_highlighted_and_named_in_the_legend(best):
     assert colours[0] == control_colour  # imatinib ranks first on 1iep
     assert all(colour == matplotlib.colors.to_rgba(BAR_COLOUR) for colour in colours[1:])
     assert "control" in axes.get_legend().get_texts()[0].get_text()
+
+
+def test_value_label_colour_follows_the_bar_colour(best):
+    # Okabe-Ito orange is light, so white text on it is hard to read.
+    figure = ranked_bars(best, "1iep", control="imatinib_1iep")
+    labels = figure.axes[0].texts
+    assert labels[0].get_color() == "black"  # the orange control bar
+    assert all(label.get_color() == "white" for label in labels[1:])  # the blue bars
+
+
+def test_labels_use_the_unicode_minus_not_a_hyphen(best):
+    bar_texts = [text.get_text() for text in ranked_bars(best, "1iep").axes[0].texts]
+    heat_texts = [text.get_text() for text in affinity_heatmap(best).axes[0].texts]
+    for text in bar_texts + heat_texts:
+        assert "-" not in text
+        assert text.startswith("−")
+
+
+def test_bar_ticks_are_whole_numbers_and_use_one_step_everywhere(best):
+    steps = set()
+    for target in ("1iep", "5x72"):
+        ticks = ranked_bars(best, target).axes[0].get_xticks()
+        assert all(float(tick).is_integer() for tick in ticks)
+        steps.add(round(ticks[1] - ticks[0], 6))
+    assert len(steps) == 1  # the same spacing on every ranked chart
+
+
+def test_ticks_stay_whole_numbers_for_very_weak_scores():
+    # A set of weak binders has a small range, where a half-unit step would creep in.
+    poses = poses_frame(
+        {"ligand": "a", "affinity": -2.0},
+        {"ligand": "b", "affinity": -1.2},
+    )
+    ticks = ranked_bars(poses_to_best(poses), "T").axes[0].get_xticks()
+    assert all(float(tick).is_integer() for tick in ticks)
 
 
 def test_control_is_highlighted_wherever_it_ranks(best):
@@ -271,6 +306,14 @@ def test_pose_strip_does_not_pool_poses_across_targets():
     scores = [point[1] for point in offsets]
     assert len(scores) == 6
     assert max(scores) < -8.0  # only target A's values, never B's -4.0 range
+
+
+def test_strip_plot_puts_more_favourable_scores_at_the_top(real):
+    # Same direction as the ranked bars, so the two figures read alike.
+    axes = pose_strip(real.poses, "1iep").axes[0]
+    bottom, top = axes.get_ylim()
+    assert bottom > top  # the axis is inverted: more negative is higher up
+    assert "favourable at the top" in pose_strip_caption("1iep")
 
 
 def test_log_only_poses_are_hollow_and_explained(real):
