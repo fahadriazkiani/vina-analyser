@@ -134,6 +134,14 @@ def affinity_heatmap(best: pd.DataFrame):
     grid = best.pivot_table(index="target", columns="ligand", values="affinity", aggfunc="min")
     grid = grid.sort_index().sort_index(axis=1)
     values = np.ma.masked_invalid(grid.to_numpy(dtype=float))
+    # Where a cell is the best of several seeds, say so: the score alone would hide
+    # that one ligand was sampled more than the others.
+    runs = None
+    if "n_runs" in best.columns:
+        runs = (
+            best.pivot_table(index="target", columns="ligand", values="n_runs", aggfunc="max")
+            .reindex(index=grid.index, columns=grid.columns)
+        )
 
     height = 3.4 + 0.7 * len(grid.index)
     figure, axes = _new_figure(height)
@@ -152,10 +160,15 @@ def affinity_heatmap(best: pd.DataFrame):
             if values.mask.ndim and values.mask[row, column]:
                 continue
             value = float(values[row, column])
+            label = format_score(value)
+            if runs is not None:
+                count = runs.iat[row, column]
+                if pd.notna(count) and int(count) > 1:
+                    label += f" (n={int(count)})"
             axes.text(
                 column,
                 row,
-                format_score(value),
+                label,
                 ha="center",
                 va="center",
                 fontsize=6,
@@ -193,7 +206,9 @@ def heatmap_caption() -> str:
         "Best Vina score for each target and ligand, in kcal/mol, on one shared colour "
         "scale. Compare ligands within a single row (one target) only: different "
         "targets use different receptors and grid boxes, so their scores are not "
-        "comparable. Blank cells were not docked. " + NOTES["scoring_error"]
+        "comparable. A cell marked (n=…) shows the best score across that many repeat "
+        "runs with different seeds, so it had more sampling than an unmarked cell, "
+        "which comes from a single run. Blank cells were not docked. " + NOTES["scoring_error"]
     )
 
 

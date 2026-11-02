@@ -132,7 +132,7 @@ def test_heatmap_annotates_every_known_value(best):
     figure = affinity_heatmap(best)
     axes = figure.axes[0]
     annotations = {text.get_text() for text in axes.texts}
-    assert "−13.27" in annotations
+    assert "−13.27 (n=4)" in annotations  # four seeds, see the run-count test
     assert "−6.37" in annotations  # bace1 on 1iep, rounded from -6.367
     assert "−11.00" in annotations  # p59 on 5x72, the PDBQT's -10.996
     assert len(axes.texts) == 10
@@ -172,6 +172,40 @@ def test_missing_pair_is_a_blank_cell_not_a_zero():
     array = figure.axes[0].images[0].get_array()
     assert array.mask.sum() == 1  # B / y was never docked
     assert len(figure.axes[0].texts) == 3
+
+
+def test_heatmap_marks_cells_drawn_from_more_than_one_run(best):
+    figure = affinity_heatmap(best)
+    texts = [text.get_text() for text in figure.axes[0].texts]
+    # Imatinib on 1iep is the best of four seeds; every other cell is a single run.
+    assert "−13.27 (n=4)" in texts
+    assert "−10.83" in texts  # imatinib on 5x72: one run, so no mark
+    assert len([text for text in texts if "n=" in text]) == 1
+
+
+def test_single_run_cells_carry_no_mark():
+    poses = poses_frame(
+        {"ligand": "once", "seed": 1, "affinity": -8.0},
+        {"ligand": "twice", "seed": 1, "affinity": -9.0},
+        {"ligand": "twice", "seed": 2, "affinity": -9.5},
+    )
+    texts = [text.get_text() for text in affinity_heatmap(poses_to_best(poses)).axes[0].texts]
+    assert "−8.00" in texts
+    assert "−9.50 (n=2)" in texts
+
+
+def test_heatmap_works_without_a_run_count_column(best):
+    # A frame from elsewhere may not carry n_runs; the figure must still build.
+    figure = affinity_heatmap(best.drop(columns="n_runs"))
+    texts = [text.get_text() for text in figure.axes[0].texts]
+    assert len(texts) == 10
+    assert not [text for text in texts if "n=" in text]
+
+
+def test_heatmap_caption_explains_the_run_count_mark():
+    caption = heatmap_caption()
+    assert "(n=" in caption
+    assert "seeds" in caption
 
 
 def test_heatmap_caption_restricts_comparison_to_one_row():
