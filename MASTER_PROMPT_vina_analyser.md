@@ -56,6 +56,10 @@ vina-analyser/
   `REMARK VINA RESULT:  <affinity>  <rmsd_lb>  <rmsd_ub>`. Atom lines are ATOM/HETATM;
   the AutoDock atom type is the last column (cols 78–79). Hydrogens are `H`/`HD`.
   Macrocycle pseudo-atoms `G0`, `G1`, `CG0`, `CG1`… are NOT real atoms.
+  **Correction (2026-11-03):** the line above is wrong about `CG*`. `CG0`, `CG1`… are real
+  carbon atoms (Meeko's glue carbons, where the ring was opened) and count as heavy atoms.
+  Only `G0`, `G1`… (named `*1`, `*2`, sitting on top of the partner `CG` carbon) are
+  pseudo-atoms. `bace1_macrocycle` has 38 heavy atoms, not 36.
 - **Vina 1.2 stdout log**: a table after the line starting `-----+`, with columns:
   mode, affinity (kcal/mol), rmsd l.b., rmsd u.b. The log header also records the
   receptor, ligand, grid center, grid size, exhaustiveness and random seed. Parse these
