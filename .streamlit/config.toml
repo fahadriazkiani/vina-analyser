@@ -1,0 +1,10 @@
+# Streamlit settings for this app.
+
+[server]
+# Largest upload in MB. Kept equal to MAX_UPLOAD_MB in vina_analyser/inputs.py.
+# Real Vina outputs are tens of kilobytes each, so 50 MB is generous.
+maxUploadSize = 50
+
+[browser]
+# Don't send usage statistics to Streamlit.
+gatherUsageStats = false
