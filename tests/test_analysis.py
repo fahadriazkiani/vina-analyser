@@ -707,3 +707,30 @@ def test_rmsd_output_carries_its_own_notes(real, reference):
     assert NOTES["rmsd_vs_reference"] in result.notes
     assert NOTES["within_2A"] in result.notes
     assert NOTES["scoring_error"] in result.notes
+
+
+# ------------------------------------------------- RMSD restricted to one target
+
+
+def test_rmsd_for_one_target_only_contains_that_target(real, reference):
+    result = redocking_rmsd(real, reference, target="1iep", ligand="imatinib_1iep", runs=real.runs)
+    table = result.table
+    assert set(table["target"]) == {"1iep"}
+    best = table[table["pose"] == 1].set_index("seed")
+    for seed, expected in EXPECTED_RMSD.items():
+        assert best.loc[seed, "rmsd_vs_reference"] == pytest.approx(expected, abs=0.02)
+    # The 124 Å number belongs to 5x72, so asking about 1iep must not produce it.
+    assert "implausible_rmsd" not in codes(result.issues)
+    assert "reference_outside_box" not in codes(result.issues)
+
+
+def test_rmsd_for_the_wrong_target_shows_why_the_number_is_meaningless(real, reference):
+    result = redocking_rmsd(real, reference, target="5x72", ligand="imatinib_1iep", runs=real.runs)
+    assert set(result.table["target"]) == {"5x72"}
+    assert result.table.iloc[0]["rmsd_vs_reference"] > 100
+    assert {"implausible_rmsd", "reference_outside_box"} <= set(codes(result.issues))
+
+
+def test_rmsd_for_an_unknown_target_is_refused(real, reference):
+    with pytest.raises(ReferenceRefused, match="no_such_target"):
+        redocking_rmsd(real, reference, target="no_such_target", ligand="imatinib_1iep")

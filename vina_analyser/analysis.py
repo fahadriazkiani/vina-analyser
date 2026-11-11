@@ -497,8 +497,13 @@ def redocking_rmsd(
     reference: Reference,
     ligand: str | None = None,
     runs: pd.DataFrame | None = None,
+    target: str | None = None,
 ) -> RmsdResult:
     """Per-pose RMSD against the reference, for poses that have coordinates.
+
+    A reference describes one ligand in one binding site, so callers should name both
+    the target and the ligand. The same imatinib reference gives 0.91 Å on 1iep and over
+    100 Å on 5x72: only the first number means anything.
 
     Runs whose ligand cannot match the reference are reported and left blank. If no
     run matches at all and no particular ligand was asked for, the reference is wrong
@@ -508,6 +513,12 @@ def redocking_rmsd(
         raise ReferenceRefused("Reference was not confirmed to be an experimental pose.")
 
     poses = results.poses[results.poses["has_coordinates"]]
+    if target is not None:
+        if target not in set(results.poses["target"]):
+            raise ReferenceRefused(f"Target {target!r} is not in this dataset.")
+        poses = poses[poses["target"] == target]
+        if runs is not None:
+            runs = runs[runs["target"] == target]
     if ligand is not None:
         poses = poses[poses["ligand"] == ligand]
 
