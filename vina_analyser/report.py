@@ -557,8 +557,17 @@ def bundle_zip(
 # ----------------------------------------------------------------------- metadata
 
 
+_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_REF = re.compile(r"refs/[A-Za-z0-9._/-]+")
+
+
 def git_info(repo_dir, runner=subprocess.run) -> dict | None:
-    """The commit the code was run from, or None when git or a checkout is missing."""
+    """The commit the code was run from, or None when there is no checkout.
+
+    Uses the git command when it works. Where it doesn't (Streamlit Community Cloud may
+    have no git binary), the commit is read from .git directly; whether the working
+    tree has changes is then unknown, so "dirty" is None.
+    """
 
     def git(*args) -> str | None:
         result = runner(
@@ -568,16 +577,45 @@ def git_info(repo_dir, runner=subprocess.run) -> dict | None:
 
     try:
         full = git("rev-parse", "HEAD")
-        if not full:
-            return None
-        short = git("rev-parse", "--short", "HEAD")
-        status = git("status", "--porcelain")
+        short = git("rev-parse", "--short", "HEAD") if full else None
+        status = git("status", "--porcelain") if short else None
     except (OSError, subprocess.SubprocessError):
+        full = None
+    if full and short is not None and status is not None:
+        # Uncommitted or untracked files mean the commit alone doesn't describe the code.
+        return {"commit": full, "commit_short": short, "dirty": status != ""}
+    commit = _commit_from_dot_git(Path(repo_dir) / ".git")
+    if commit is None:
         return None
-    if short is None or status is None:
+    return {"commit": commit, "commit_short": commit[:7], "dirty": None}
+
+
+def _commit_from_dot_git(dot_git: Path) -> str | None:
+    """HEAD's commit, read from the files git keeps: HEAD, then a loose or packed ref."""
+    try:
+        if not dot_git.is_dir():
+            return None  # no checkout, or a worktree/submodule pointer: not followed
+        head = (dot_git / "HEAD").read_text(encoding="utf-8")[:300].strip()
+        if _SHA.fullmatch(head):
+            return head  # detached HEAD
+        if not head.startswith("ref: "):
+            return None
+        ref = head.removeprefix("ref: ").strip()
+        if not _REF.fullmatch(ref) or ".." in ref:
+            return None
+        loose = dot_git / ref
+        if loose.is_file():
+            sha = loose.read_text(encoding="utf-8")[:100].strip()
+            return sha if _SHA.fullmatch(sha) else None
+        packed = dot_git / "packed-refs"
+        if packed.is_file():
+            for line in packed.read_text(encoding="utf-8").splitlines():
+                sha, _, name = line.partition(" ")
+                if name == ref and _SHA.fullmatch(sha):
+                    return sha
+    except (OSError, UnicodeDecodeError):
         return None
-    # Uncommitted or untracked files mean the commit alone doesn't describe the code.
-    return {"commit": full, "commit_short": short, "dirty": status != ""}
+    return None
 
 
 def package_versions() -> dict[str, str]:

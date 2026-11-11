@@ -35,6 +35,7 @@ from vina_analyser.report import (
     figure_specs,
     figures_zip,
     git_info,
+    metadata_json,
     methods_text,
     run_metadata,
     safe_name,
@@ -547,11 +548,64 @@ def test_git_info_outside_a_checkout_is_none(tmp_path):
     assert git_info(tmp_path) is None
 
 
-def test_git_info_without_git_installed_is_none(tmp_path):
-    def missing(*args, **kwargs):
-        raise FileNotFoundError("git")
+def no_git(*args, **kwargs):
+    raise FileNotFoundError("git")
 
-    assert git_info(ROOT, runner=missing) is None
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def fake_checkout(root, head, refs=None, packed=None):
+    (root / ".git" / "refs" / "heads").mkdir(parents=True)
+    (root / ".git" / "HEAD").write_text(head, encoding="utf-8")
+    for name, sha in (refs or {}).items():
+        (root / ".git" / name).write_text(sha + "\n", encoding="utf-8")
+    if packed is not None:
+        (root / ".git" / "packed-refs").write_text(packed, encoding="utf-8")
+    return root
+
+
+def test_git_info_without_git_and_without_a_checkout_is_none(tmp_path):
+    assert git_info(tmp_path, runner=no_git) is None
+
+
+def test_git_info_without_git_reads_the_commit_from_dot_git():
+    # Streamlit Community Cloud may have no git binary; the commit is still in .git.
+    if shutil.which("git") is None:
+        pytest.skip("git is needed to know the expected commit")
+    full = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    info = git_info(ROOT, runner=no_git)
+    assert info == {"commit": full, "commit_short": full[:7], "dirty": None}
+
+
+def test_git_info_fallback_reads_a_loose_branch_ref(tmp_path):
+    fake_checkout(tmp_path, "ref: refs/heads/main\n", refs={"refs/heads/main": SHA})
+    assert git_info(tmp_path, runner=no_git) == {"commit": SHA, "commit_short": "0123456", "dirty": None}
+
+
+def test_git_info_fallback_reads_packed_refs(tmp_path):
+    packed = f"# pack-refs with: peeled fully-peeled sorted\n{SHA} refs/heads/main\n"
+    fake_checkout(tmp_path, "ref: refs/heads/main\n", packed=packed)
+    assert git_info(tmp_path, runner=no_git)["commit"] == SHA
+
+
+def test_git_info_fallback_reads_a_detached_head(tmp_path):
+    fake_checkout(tmp_path, SHA + "\n")
+    assert git_info(tmp_path, runner=no_git)["commit"] == SHA
+
+
+@pytest.mark.parametrize("head", ["", "garbage\n", "ref: refs/heads/missing\n", "ref: ../../etc/passwd\n"])
+def test_git_info_fallback_gives_none_for_anything_unreadable(tmp_path, head):
+    fake_checkout(tmp_path, head)
+    assert git_info(tmp_path, runner=no_git) is None
+
+
+def test_unknown_dirty_state_is_null_in_metadata_and_silent_in_methods(real, raw_files):
+    git = {"commit": SHA, "commit_short": "0123456", "dirty": None}
+    meta = json.loads(metadata_json(metadata(real, raw_files, git=git)))
+    assert meta["git"]["dirty"] is None
+    text = methods_text(real.runs, git=git).text
+    assert "(commit 0123456)." in text and "uncommitted" not in text
 
 
 def test_metadata_omits_git_cleanly_when_unavailable(real, raw_files, tmp_path):
