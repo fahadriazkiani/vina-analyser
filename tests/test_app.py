@@ -1,13 +1,12 @@
 """Tests for app.py, driven by streamlit.testing.v1.AppTest.
 
-AppTest runs the script without a browser. It cannot drive st.file_uploader or edit
-st.data_editor cells, so:
+AppTest runs the script without a browser. It cannot drive st.file_uploader, so
+uploads are injected through st.session_state["input"], the same structure the
+uploader handler builds (the upload handling itself is tested in test_inputs.py).
+Cell edits are made the way the browser makes them, through the data_editor's
+widget state (see edit_table).
 
-* uploads are injected through st.session_state["input"], the same structure the
-  uploader handler builds (the upload handling itself is tested in test_inputs.py);
-* cell edits are covered by the names_from_table tests in test_inputs.py.
-
-The real upload and editing paths are on the manual checklist in PROGRESS.md.
+Dragging files into the uploader and typing into cells stay on the manual checklist.
 """
 
 from pathlib import Path
@@ -408,3 +407,65 @@ def test_scores_on_screen_use_the_same_decimals_as_excel(analysed):
     assert checked >= 5  # score, LE, mean, SD, range at least
     summary = next(e for e in tab(analysed, "Summary").dataframe if LABELS["affinity"] in e.value.columns)
     assert formats_of(summary)[LABELS["affinity"]] == "%.3f"
+
+
+# ------------------------------------------------------------- table edits
+
+
+def edit_table(at, edits: dict[str, dict]) -> None:
+    """Edit cells of the recognition table the way the browser does: through the
+    data_editor's widget state, keyed by row number."""
+    import hashlib
+
+    files = at.session_state["input"]["files"]
+    digest = hashlib.sha256()
+    for name in sorted(files):
+        digest.update(name.encode() + b"\0" + files[name] + b"\0")
+    table = frame_with(at, "recognised")
+    rows = {list(table["file"]).index(file): change for file, change in edits.items()}
+    at.session_state[f"editor_{digest.hexdigest()[:16]}"] = {
+        "edited_rows": rows, "added_rows": [], "deleted_rows": [],
+    }
+    at.run()
+    assert not at.exception, at.exception
+
+
+def preview_row(at, pdbqt):
+    preview = frame_with(at, "seed used")
+    rows = preview[preview["PDBQT file"] == pdbqt]
+    assert len(rows) == 1, pdbqt
+    return rows.iloc[0]
+
+
+def test_preview_follows_an_excluded_log():
+    at = fresh()
+    button(at, "load_example").click().run()
+    edit_table(at, {"1iep__imatinib_1iep_seed2.log": {"include": False}})
+    row = preview_row(at, "1iep__imatinib_1iep_seed2_out.pdbqt")
+    assert [row["seed used"], row["seed from"], row["log file"]] == ["2", "filename", "—"]
+
+
+def test_preview_follows_a_retyped_ligand_and_matches_the_analysis():
+    at = fresh()
+    button(at, "load_example").click().run()
+    edit_table(at, {"1iep__imatinib_1iep_out.pdbqt": {"ligand": "renamed"}})
+    row = preview_row(at, "1iep__imatinib_1iep_out.pdbqt")
+    assert [row["ligand"], row["seed used"], row["log file"]] == ["renamed", "—", "—"]
+    preview = frame_with(at, "seed used")
+    button(at, "run_analysis").click().run()
+    runs = frame_with(tab(at, "Summary"), "Modes in log")
+    assert len(preview) == len(runs) == 14  # the log is now a run of its own
+    assert sorted(preview["ligand"]) == sorted(runs["ligand"])
+
+
+def test_heatmap_caption_in_the_app_says_when_scores_are_left_out():
+    from vina_analyser.plots import MAX_ANNOTATED_LIGANDS
+
+    pdbqt = (DATA / "results" / "1iep__p59_5x72_out.pdbqt").read_bytes()
+    files = {f"1iep__lig{i:02d}_out.pdbqt": pdbqt for i in range(MAX_ANNOTATED_LIGANDS + 1)}
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.session_state["input"] = {"origin": "upload", "files": files, "issues": []}
+    at.run()
+    button(at, "run_analysis").click().run()
+    assert not at.exception, at.exception
+    assert any("best-pose table" in c.value for c in tab(at, "Figures").caption)

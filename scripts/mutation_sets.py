@@ -100,6 +100,26 @@ MUTATIONS: dict[str, list[Mutation]] = {
         ]),
     ],
     'vina_analyser/plots.py': [
+        Mutation('phase6', "Run-count mark back on the score's line", [
+            ('label += f"\\n(n={int(count)})"',
+             'label += f" (n={int(count)})"'),
+        ]),
+        Mutation('phase6', 'Scores printed however many ligands', [
+            ('    annotate = len(grid.columns) <= MAX_ANNOTATED_LIGANDS',
+             '    annotate = True'),
+        ]),
+        Mutation('phase6', 'Heatmap never widens', [
+            ('    width = _width_for(len(grid.columns), ANNOTATED_CELL_CM if annotate else LABEL_SPACING_CM)',
+             '    width = FIGURE_WIDTH_CM'),
+        ]),
+        Mutation('phase6', 'Pose strip never widens', [
+            ('    figure, axes = _new_figure(height, _width_for(len(ligands), LABEL_SPACING_CM))',
+             '    figure, axes = _new_figure(height)'),
+        ]),
+        Mutation('phase6', 'Caption never says the numbers were left out', [
+            ('            if n_ligands is not None and n_ligands > MAX_ANNOTATED_LIGANDS',
+             '            if False'),
+        ]),
         Mutation('guard', 'Import of a missing name (must be INVALID)', [
             ('from vina_analyser.analysis import NOTES',
              'from vina_analyser.analysis import NOTES, DOES_NOT_EXIST'),
@@ -190,6 +210,26 @@ MUTATIONS: dict[str, list[Mutation]] = {
         ]),
     ],
     'app.py': [
+        Mutation('phase6', 'Runs preview built from unedited names', [
+            ('    preview = inputs.runs_preview(parse(texts, names).runs)',
+             '    preview = inputs.runs_preview(parse(texts, {}).runs)'),
+        ]),
+        Mutation('phase6', 'Privacy statement removed', [
+            ('    st.markdown(PRIVACY_NOTE)\n',
+             ''),
+        ]),
+        Mutation('phase6', 'Parse cache never expires', [
+            ('ttl=DATA_CACHE_SECONDS, show_spinner="Reading',
+             'show_spinner="Reading'),
+        ]),
+        Mutation('phase6', 'App heatmap caption ignores the ligand count', [
+            ('show_figure("heatmap", best, plots.heatmap_caption(best["ligand"].nunique()))',
+             'show_figure("heatmap", best, plots.heatmap_caption())'),
+        ]),
+        Mutation('phase6', 'On-screen decimals not taken from Excel', [
+            ('            decimals = len(excel.partition(".")[2])',
+             '            decimals = 2'),
+        ]),
         Mutation('phase5', "Methods: app doesn't pass its git commit", [
             ('methods_text(results.runs, redocking=redocking, git=cached_git_info())',
              'methods_text(results.runs, redocking=redocking)'),
@@ -236,6 +276,18 @@ MUTATIONS: dict[str, list[Mutation]] = {
         ]),
     ],
     'vina_analyser/inputs.py': [
+        Mutation('phase6', 'Preview says every seed came from the filename', [
+            ('"seed from": _SEED_FROM.get(run.get("seed_source"), "not recorded"),',
+             '"seed from": "filename",'),
+        ]),
+        Mutation('phase6', 'Loose uploads: no file-count limit', [
+            ('    if len(items) > MAX_FILES:\n',
+             '    if False:\n'),
+        ]),
+        Mutation('phase6', 'Loose uploads: no total-size limit', [
+            ('    total = sum(len(data) for _, data in items)\n',
+             '    total = 0\n'),
+        ]),
         Mutation('phase4', 'Names passed only for unrecognised rows', [
             ('        names[row.file] = {',
              '        if row.recognised != "yes": names[row.file] = {'),
@@ -262,6 +314,18 @@ MUTATIONS: dict[str, list[Mutation]] = {
         ]),
     ],
     'vina_analyser/report.py': [
+        Mutation('phase6', 'No .git fallback without the git command', [
+            ('    commit = _commit_from_dot_git(Path(repo_dir) / ".git")',
+             '    commit = None'),
+        ]),
+        Mutation('phase6', "Fallback follows refs containing '..'", [
+            ('        if not _REF.fullmatch(ref) or ".." in ref:',
+             '        if not _REF.fullmatch(ref):'),
+        ]),
+        Mutation('phase6', 'Fallback claims a clean tree', [
+            ('"commit_short": commit[:7], "dirty": None}',
+             '"commit_short": commit[:7], "dirty": False}'),
+        ]),
         Mutation('phase5', 'Methods: preparation gap left out', [
             ('    sentences.append(PREPARATION_GAP)\n',
              ''),

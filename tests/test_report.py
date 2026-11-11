@@ -603,6 +603,13 @@ def test_git_info_fallback_gives_none_for_anything_unreadable(tmp_path, head):
     assert git_info(tmp_path, runner=no_git) is None
 
 
+def test_git_info_fallback_never_follows_a_ref_out_of_dot_git(tmp_path):
+    # "refs/../../outside" matches the refs/ pattern; only the ".." check stops it.
+    fake_checkout(tmp_path, "ref: refs/../../outside" + chr(10))
+    (tmp_path / "outside").write_text(SHA, encoding="utf-8")
+    assert git_info(tmp_path, runner=no_git) is None
+
+
 def test_unknown_dirty_state_is_null_in_metadata_and_silent_in_methods(real, raw_files):
     git = {"commit": SHA, "commit_short": "0123456", "dirty": None}
     meta = json.loads(metadata_json(metadata(real, raw_files, git=git)))
