@@ -3,7 +3,7 @@
 Handoff notes so a new Claude Code session (or a person) can resume work.
 Read this file, then `MASTER_PROMPT_vina_analyser.md`, then `vina_test_data/README.md`.
 
-_Last updated: 2026-11-11, after Phase 5._
+_Last updated: 2026-11-12, after Phase 6._
 
 ## Status
 
@@ -14,9 +14,13 @@ _Last updated: 2026-11-11, after Phase 5._
 | 3. Figures (`plots.py`) | ✅ Done | Heatmap, ranked bars, per-target strip plots; reviewed visually |
 | 4. Streamlit app (`app.py`) | ✅ Done | Upload/zip, recognition table, 5 tabs, RMSD gate; AppTest-tested |
 | 5. Exports & reproducibility (`report.py`) | ✅ Done | Excel, ZIPs, methods text, run_metadata.json with git commit |
-| 6. Polish (README, LICENSE, deployment, security) | ⏳ Next | Not started |
+| 6. Polish (README, LICENSE, deployment, security) | ✅ Done | README, MIT + Apache notice, CITATION.cff, CI, runs preview, privacy note |
 
-Test suite: 384 passed, 0 warnings, after Phase 5 (about 80 s; figure tests dominate).
+Test suite: 437 passed, 0 warnings, after Phase 6 (about 90-140 s; figure tests dominate).
+Deliberate bugs: 100 in scripts/mutation_sets.py (Phases 2-6); every real one caught,
+every guard one INVALID. Phase 6 first missed 3 (app preview after an edit, app
+heatmap caption above 16 ligands, `..` in a git ref); each now has a test.
+Version 0.1.0. Stays below 1.0.0 until the author has used it on their own data.
 
 ## Working method (keep using it)
 - Plan first, wait for approval, then tests first (show them failing), then code.
@@ -80,26 +84,49 @@ Test suite: 384 passed, 0 warnings, after Phase 5 (about 80 s; figure tests domi
 21. **ZIPs:** fixed 1980 timestamps, sorted entries, fixed `create_system`, so identical
     input gives identical bytes on every OS. Entry names are validated; target names
     go through `safe_name` before becoming file names.
+22. **What is analysed is shown before Run:** the editable table holds facts about
+    each file only (its seed in the filename never changes). "Runs that will be
+    analysed" below it comes from the same cached `parse(texts, names)` as the
+    results, so the seed and PDBQT/log pairing on screen are the ones analysed after
+    any retyping or exclusion. (Fixes the stale-seed issue; one parse, one truth.)
+23. **Privacy statement next to the uploader**, not only in the README: in memory,
+    never on disk, nothing kept after the session except caches, publicly reachable.
+    Every `st.cache_data` holding user data has a 1-hour ttl, so that sentence is
+    true; a test checks every cache has a ttl.
+24. **Git commit without the git command** (Community Cloud): read from `.git/HEAD`
+    and a loose or packed ref; `dirty` is then `null` (unknown), and the methods
+    credit says only "(commit abc1234)". Refs must be `refs/...` without `..`.
+25. **Heatmap legibility:** "(n=k)" on its own line under the score. Figures keep the
+    8.5 cm column until the ligands don't fit, then widen (0.85 cm per printed cell,
+    0.45 cm per 45° label). Above 16 ligands the scores are not printed and the
+    caption points to the best-pose table.
+26. **On-screen decimals come from `report.NUMBER_FORMATS`**, the Excel formats, so
+    screen and workbook can't drift (score 0.000, LE 0.0000, RMSD 0.00).
+27. **Loose uploads get the zip's limits** (2000 files, 200 MB total); Streamlit only
+    caps each file.
+28. **Tests never assert conditionally and never skip**: tables are found with
+    `frame_with()`, which fails with a message; git tests require git.
+29. **Version policy:** 0.1.0 is the first public release (tag `v0.1.0`; Zenodo mints a
+    DOI per tag). 1.0.0 only after use on real data. CI keeps the Windows job.
 
 ## Known issues to address later
-- Heatmap "(n=4)" label is tight in its cell → put the mark on a second line (Phase 6).
-- Large grids (many ligands) untested; long names at 45° use a lot of space.
-- Python 3.11 not actually run yet (only grammar + dependency checks) → add CI in Phase 6.
-- Licence of the Vina example files to verify in Phase 6 (believed Apache 2.0).
-- App figures/tables: wide grids and narrow windows not checked in a browser yet.
-- Real file_uploader and data_editor cell editing are NOT covered by AppTest; they are
-  on the manual checklist below.
+- The real file_uploader is NOT covered by AppTest (uploads are injected). Table
+  edits ARE: tests set the data_editor's widget state, as the browser does
+  (`edit_table` in tests/test_app.py). Dragging files and typing into cells stay
+  manual checks.
 - Figure builds are slower (~0.5-1.5 s each) because the layout is settled at 300 dpi;
   cached in the app.
 - results.xlsx "modified" property is set by openpyxl to the save time; only "created"
   equals the analysis time. Not fixable without rewriting the file after saving.
 - Spinners on the ZIP build are not visible to AppTest: manual check only.
-- The "seed used" shown for a PDBQT in the recognition table comes from the filename
-  pairing; retyping a recognised PDBQT's target/ligand does not update it (Summary is
-  still correct).
-- Score column on screen has no fixed format (Excel does: 0.000).
-- README: add a "How this was built" section (AI-assisted, decisions and review by me).
-- Repo is private; make public after Phase 6.
+- Very large grids: at 60 ligands a heatmap or strip plot is ~30 cm wide, wider than a
+  journal page. Readable on screen; for a paper, split the ligand set.
+- Text typed into the table (file, target, ligand names) appears in warnings rendered
+  as Markdown. Streamlit does not render HTML, and only the person who uploaded the
+  files sees it, so this is accepted.
+- The README has no screenshot yet: Chrome screenshots timed out during Phase 6.
+- CI has not run yet: it runs on the first push. Python 3.11 is verified only then.
+- README "How this was built" is a draft for the author to rewrite.
 
 ## Phase 4 manual checks (not covered by automated tests)
 Run with `streamlit run app.py`, then:
@@ -157,10 +184,22 @@ every line, so a clean run means "these decisions are guarded", not "the code is
 tested". When a phase adds a decision, add a mutation for it. Run `--check` after
 refactors.
 
-## Next step: Phase 6 (polish)
-Ask for the plan first. README (purpose, screenshot, install/run, input format,
-limitations, how to cite Vina), LICENSE (MIT), deployment notes for Streamlit Community
-Cloud, input-safety review, CI on Python 3.11, and the known issues above.
+## Phase 6 manual checks
+1. Load the example, untick `1iep__imatinib_1iep_seed2.log`: in "Runs that will be
+   analysed" the seed-2 PDBQT now shows seed 2 "from filename" and no log file.
+2. Retype the ligand of `1iep__imatinib_1iep_out.pdbqt`: its run loses the log seed
+   (—, not recorded) and the log becomes a run of its own.
+3. Read the privacy statement under "1. Files" as someone with unpublished data.
+4. Summary tab: scores show three decimals (−10.996, not −11).
+5. Read README.md top to bottom, and rewrite "How this was built".
+
+## Next steps (the author's, not code)
+1. Push, and check the CI run is green on all four jobs (Actions tab).
+2. Add a screenshot to the README (docs/screenshot.png).
+3. Make the repository public; connect Zenodo; push the tag `v0.1.0` and make a
+   GitHub release from it (Zenodo mints the DOI).
+4. Deploy on Streamlit Community Cloud with Python 3.12 (README, "Deploying").
+5. Use it on your own data; then decide on 1.0.0.
 
 ## How to resume in a new session
 Paste this into Claude Code:
@@ -168,4 +207,4 @@ Paste this into Claude Code:
 > Read PROGRESS.md, MASTER_PROMPT_vina_analyser.md and vina_test_data/README.md.
 > Run `git status`, `git log --oneline -10` and `pytest -q`, and report the results.
 > If there are uncommitted changes, show me `git diff --stat` and don't discard
-> anything. Then give me the Phase 6 plan and wait for approval.
+> anything. Then tell me which of the "Next steps" are still open.
