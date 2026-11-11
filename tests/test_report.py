@@ -227,6 +227,77 @@ def test_no_redocking_sentence_when_no_rmsd_could_be_computed(real, redocking):
     assert "redocking" not in text.lower()
 
 
+PREPARATION_GAP = (
+    "Ligand and receptor preparation (protonation, charges, conversion to PDBQT, removal "
+    "of waters and cofactors) is not recorded in Vina log files and must be described separately."
+)
+CLEAN_GIT = {"commit": "a" * 40, "commit_short": "abc1234", "dirty": False}
+
+
+def paragraph(text: str) -> str:
+    return text.split("\n")[0]  # the bullets and references follow a blank line
+
+
+def sentences(text: str) -> list[str]:
+    return re.split(r"(?<=\.)\s+", paragraph(text))
+
+
+def methods_variants(real, redocking):
+    one_target = real.runs[real.runs["target"] == "1iep"]
+    no_headers = real.runs.assign(vina_version=None, exhaustiveness=None, grid_spacing=None)
+    return {
+        "all data": methods_text(real.runs, git=CLEAN_GIT).text,
+        "one target": methods_text(one_target).text,
+        "one ligand, one run": methods_text(one_target[one_target["ligand"] == "p59_5x72"]).text,
+        "headers missing": methods_text(no_headers).text,
+        "with redocking": methods_text(real.runs, redocking=redocking, git=CLEAN_GIT).text,
+    }
+
+
+def test_preparation_gap_is_always_stated_once(real, redocking):
+    for name, text in methods_variants(real, redocking).items():
+        assert paragraph(text).count(PREPARATION_GAP) == 1, name
+
+
+def test_methods_credits_the_analyser_with_version_and_commit(real):
+    text = methods_text(real.runs, git=CLEAN_GIT).text
+    expected = (
+        f"Results were summarised with Vina Docking Results Analyser v{vina_analyser.__version__} "
+        "(commit abc1234)."
+    )
+    assert expected in paragraph(text)
+
+
+def test_methods_says_when_the_commit_had_uncommitted_changes(real):
+    text = methods_text(real.runs, git={**CLEAN_GIT, "dirty": True}).text
+    assert "(commit abc1234, with uncommitted changes)." in text
+
+
+def test_methods_omits_the_commit_cleanly_outside_a_git_checkout(real):
+    text = methods_text(real.runs, git=None).text
+    assert f"Results were summarised with Vina Docking Results Analyser v{vina_analyser.__version__}." in text
+    assert "commit" not in text
+    assert "()" not in text and "None" not in text
+
+
+def test_no_sentence_starts_with_a_numeral(real, redocking):
+    for name, text in methods_variants(real, redocking).items():
+        starts = [s for s in sentences(text) if s[:1].isdigit()]
+        assert starts == [], f"{name}: {starts}"
+
+
+def test_ligand_count_is_phrased_as_a_total(real):
+    text = methods_text(real.runs).text
+    assert "A total of 5 ligands were docked into 2 targets: " in text
+
+
+def test_a_single_ligand_is_not_phrased_as_a_total(real):
+    runs = real.runs[(real.runs["target"] == "1iep") & (real.runs["ligand"] == "p59_5x72")]
+    text = methods_text(runs).text
+    assert "A single ligand was docked into 1 target: 1iep" in text
+    assert "A total of" not in text
+
+
 # ----------------------------------------------------------------- file names
 
 

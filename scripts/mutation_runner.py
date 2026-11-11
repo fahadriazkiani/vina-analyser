@@ -20,6 +20,7 @@ Usage (from the repository root):
     python scripts/mutation_runner.py                   # everything
     python scripts/mutation_runner.py --phase phase5    # one or more phases
     python scripts/mutation_runner.py --module vina_analyser/report.py
+    python scripts/mutation_runner.py --name "methods:"  # names containing this text
     python scripts/mutation_runner.py --check           # only check entries still apply
 """
 
@@ -143,13 +144,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--phase", action="append", help="only this phase (repeatable)")
     parser.add_argument("--module", action="append", help="only mutations of this file (repeatable)")
+    parser.add_argument("--name", help="only mutations whose name contains this text")
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--scratch", type=Path, help="work folder (default: a new temp folder)")
     parser.add_argument("--check", action="store_true", help="only check that every entry still applies")
     args = parser.parse_args()
 
     chosen = [(rel, m) for rel, items in MUTATIONS.items() for m in items
-              if (not args.module or rel in args.module) and (not args.phase or m.phase in args.phase)]
+              if (not args.module or rel in args.module) and (not args.phase or m.phase in args.phase)
+              and (not args.name or args.name.lower() in m.name.lower())]
     if not chosen:
         print("no mutations match those filters")
         return 1

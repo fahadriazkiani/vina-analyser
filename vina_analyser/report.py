@@ -41,6 +41,13 @@ PACKAGES = ("pandas", "numpy", "matplotlib", "streamlit", "openpyxl")
 BUNDLE_FOLDER = "vina_results"
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)  # the earliest date a zip can hold
 
+# Vina logs carry nothing about how the inputs were prepared, so say so every time:
+# leaving it out would read as if the paragraph were complete.
+PREPARATION_GAP = (
+    "Ligand and receptor preparation (protonation, charges, conversion to PDBQT, removal "
+    "of waters and cofactors) is not recorded in Vina log files and must be described separately."
+)
+
 LIMITATIONS = [
     "A docking score is not a binding affinity. Vina scores are estimates from an "
     "empirical scoring function, not measured affinities, and say nothing about "
@@ -132,8 +139,13 @@ class MethodsText:
     issues: list[Issue] = field(default_factory=list)
 
 
-def methods_text(runs: pd.DataFrame, redocking: Redocking | None = None) -> MethodsText:
-    """A methods paragraph built only from values parsed from the logs."""
+def methods_text(
+    runs: pd.DataFrame, redocking: Redocking | None = None, git: dict | None = None
+) -> MethodsText:
+    """A methods paragraph built only from values parsed from the logs.
+
+    `git` is git_info() for the analyser's own checkout, or None outside one.
+    """
     issues: list[Issue] = []
 
     def setting(column, describe, name):
@@ -172,6 +184,7 @@ def methods_text(runs: pd.DataFrame, redocking: Redocking | None = None) -> Meth
 
     sentences = [f"Docking was performed with {version} (Eberhardt et al., 2021; Trott and Olson, 2010) {scoring}."]
     sentences.append(_targets_sentence(runs))
+    sentences.append(PREPARATION_GAP)
 
     search = [
         setting("exhaustiveness", lambda v: f"an exhaustiveness of {int(v)}", "exhaustiveness")
@@ -205,6 +218,7 @@ def methods_text(runs: pd.DataFrame, redocking: Redocking | None = None) -> Meth
     redock = _redocking_sentence(redocking)
     if redock:
         sentences.append(redock)
+    sentences.append(_analyser_sentence(git))
 
     lines = [" ".join(sentences)]
     if len(targets) > 1:
@@ -260,8 +274,17 @@ def _targets_sentence(runs: pd.DataFrame) -> str:
         receptors = sorted({_basename(r) for r in runs.loc[runs["target"] == target, "receptor"].dropna()})
         receptor = " or ".join(receptors) if receptors else f"receptor file {NOT_RECORDED}"
         described.append(f"{target} (receptor {receptor})" if receptors else f"{target} ({receptor})")
-    noun = "ligand was" if ligands == 1 else "ligands were"
-    return f"{ligands} {noun} docked into {len(targets)} target{'s' if len(targets) != 1 else ''}: {_join(described)}."
+    # Journals disallow a sentence that starts with a numeral.
+    subject = "A single ligand was" if ligands == 1 else f"A total of {ligands} ligands were"
+    return f"{subject} docked into {len(targets)} target{'s' if len(targets) != 1 else ''}: {_join(described)}."
+
+
+def _analyser_sentence(git: dict | None) -> str:
+    credit = f"Results were summarised with Vina Docking Results Analyser v{vina_analyser.__version__}"
+    if not git:
+        return credit + "."
+    dirty = ", with uncommitted changes" if git.get("dirty") else ""
+    return f"{credit} (commit {git['commit_short']}{dirty})."
 
 
 def _seed_sentence(runs: pd.DataFrame) -> str:

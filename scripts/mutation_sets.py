@@ -190,6 +190,10 @@ MUTATIONS: dict[str, list[Mutation]] = {
         ]),
     ],
     'app.py': [
+        Mutation('phase5', "Methods: app doesn't pass its git commit", [
+            ('methods_text(results.runs, redocking=redocking, git=cached_git_info())',
+             'methods_text(results.runs, redocking=redocking)'),
+        ]),
         Mutation('guard', 'App crashes on start-up (must be INVALID)', [
             ('import streamlit as st\n',
              'import streamlit as st\nst.undefined_call()\n'),
@@ -258,6 +262,22 @@ MUTATIONS: dict[str, list[Mutation]] = {
         ]),
     ],
     'vina_analyser/report.py': [
+        Mutation('phase5', 'Methods: preparation gap left out', [
+            ('    sentences.append(PREPARATION_GAP)\n',
+             ''),
+        ]),
+        Mutation('phase5', 'Methods: analyser commit left out', [
+            ('return f"{credit} (commit {git[\'commit_short\']}{dirty})."',
+             'return credit + "."'),
+        ]),
+        Mutation('phase5', 'Methods: uncommitted changes not mentioned', [
+            ('dirty = ", with uncommitted changes" if git.get("dirty") else ""',
+             'dirty = ""'),
+        ]),
+        Mutation('phase5', 'Methods: sentence starts with a numeral', [
+            ('f"A total of {ligands} ligands were"',
+             'f"{ligands} ligands were"'),
+        ]),
         Mutation('phase4', 'Limitations box loses the rigid-receptor point', [
             ('"The receptor is rigid. Protein flexibility',
              '"The receptor. Protein flexibility'),

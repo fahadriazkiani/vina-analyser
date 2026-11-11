@@ -439,7 +439,7 @@ def export_tables(result, results: ParsedResults, redocking) -> dict:
 
 def show_export(result, results: ParsedResults, redocking, targets, control, data, analysed) -> None:
     tables = export_tables(result, results, redocking)
-    methods = report.methods_text(results.runs, redocking=redocking)
+    methods = report.methods_text(results.runs, redocking=redocking, git=cached_git_info())
 
     st.subheader("Methods paragraph")
     st.caption(

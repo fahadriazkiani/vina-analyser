@@ -275,6 +275,18 @@ def test_export_tab_offers_excel_methods_and_metadata(analysed):
     assert any("AutoDock Vina v1.2.5" in block.value for block in analysed.code)
 
 
+def test_methods_in_the_app_credits_this_checkout(analysed):
+    from vina_analyser import __version__
+    from vina_analyser.report import git_info
+
+    methods = next(block.value for block in analysed.code if "AutoDock Vina" in block.value)
+    assert f"Vina Docking Results Analyser v{__version__}" in methods
+    assert "is not recorded in Vina log files" in methods
+    git = git_info(ROOT)
+    if git is not None:
+        assert f"(commit {git['commit_short']}" in methods
+
+
 def test_bundle_is_built_on_request_with_matching_hashes():
     import hashlib
     import io
