@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below, together with AutoDock Vina."
+title: "Vina Docking Results Analyser"
+abstract: "Reproducible tables, figures and a methods paragraph from AutoDock Vina output files."
+type: software
+version: 0.1.0
+authors:
+  - family-names: Riaz
+    given-names: Fahad
+license: MIT
+repository-code: "https://github.com/fahadriazkiani/vina-analyser"
+keywords:
+  - molecular docking
+  - AutoDock Vina
+  - reproducibility
+references:
+  - type: article
+    title: "AutoDock Vina 1.2.0: New Docking Methods, Expanded Force Field, and Python Bindings"
+    authors:
+      - family-names: Eberhardt
+        given-names: Jerome
+      - family-names: Santos-Martins
+        given-names: Diogo
+      - family-names: Tillack
+        given-names: Andreas F.
+      - family-names: Forli
+        given-names: Stefano
+    journal: "Journal of Chemical Information and Modeling"
+    year: 2021
+    doi: 10.1021/acs.jcim.1c00203
+  - type: article
+    title: "AutoDock Vina: improving the speed and accuracy of docking with a new scoring function, efficient optimization and multithreading"
+    authors:
+      - family-names: Trott
+        given-names: Oleg
+      - family-names: Olson
+        given-names: Arthur J.
+    journal: "Journal of Computational Chemistry"
+    year: 2010
+    doi: 10.1002/jcc.21334
