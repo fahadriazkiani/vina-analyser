@@ -1,0 +1,53 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 3.11 is the oldest supported version; 3.12 is what Streamlit Community
+          # Cloud runs; 3.14 is what development uses.
+          - { os: ubuntu-latest, python: "3.11" }
+          - { os: ubuntu-latest, python: "3.12" }
+          - { os: ubuntu-latest, python: "3.14" }
+          # Windows: where the SVG line-ending bug appeared, and where it is developed.
+          - { os: windows-latest, python: "3.14" }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history isn't needed, but .git is: the git-metadata tests read it.
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+      # Seconds: every deliberate bug in scripts/mutation_sets.py still applies.
+      - run: python scripts/mutation_runner.py --check
+
+  mutations:
+    # The full deliberate-bug run takes about 40 minutes, so it is started by hand
+    # (Actions tab > tests > Run workflow), not on every push.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python scripts/mutation_runner.py --workers 4
