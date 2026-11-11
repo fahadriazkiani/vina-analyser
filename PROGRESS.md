@@ -3,7 +3,7 @@
 Handoff notes so a new Claude Code session (or a person) can resume work.
 Read this file, then `MASTER_PROMPT_vina_analyser.md`, then `vina_test_data/README.md`.
 
-_Last updated: 2026-11-11, after Phase 4._
+_Last updated: 2026-11-11, after Phase 5._
 
 ## Status
 
@@ -13,10 +13,10 @@ _Last updated: 2026-11-11, after Phase 4._
 | 2. Analysis (`analysis.py`) | ✅ Done | Ranking, Δ vs control, LE, seed stats, redocking RMSD |
 | 3. Figures (`plots.py`) | ✅ Done | Heatmap, ranked bars, per-target strip plots; reviewed visually |
 | 4. Streamlit app (`app.py`) | ✅ Done | Upload/zip, recognition table, 5 tabs, RMSD gate; AppTest-tested |
-| 5. Exports & reproducibility (`report.py`) | ⏳ Next | CSV (utf-8-sig) already done in Phase 4 |
-| 6. Polish (README, LICENSE, deployment, security) | ⏳ | Not started |
+| 5. Exports & reproducibility (`report.py`) | ✅ Done | Excel, ZIPs, methods text, run_metadata.json with git commit |
+| 6. Polish (README, LICENSE, deployment, security) | ⏳ Next | Not started |
 
-Test suite: 318 passed, 0 warnings, after Phase 4 (about 90 s; figure tests dominate).
+Test suite: 384 passed, 0 warnings, after Phase 5 (about 80 s; figure tests dominate).
 
 ## Working method (keep using it)
 - Plan first, wait for approval, then tests first (show them failing), then code.
@@ -62,6 +62,24 @@ Test suite: 318 passed, 0 warnings, after Phase 4 (about 90 s; figure tests domi
     `inputs.MAX_UPLOAD_MB` by a test); zips: 2000 files, 20 MB per file, 200 MB
     unpacked, no `..`/absolute paths, nested zips skipped. Parse cache max 8 entries,
     figure cache max 32.
+18. **Methods paragraph:** only parsed log values; "not recorded" otherwise, never
+    Vina defaults. Logs do not record `num_modes` or `energy_range`: the observed mode
+    count is reported, energy_range is "not recorded". Seeds are quoted only when the
+    run's `seed_source` is "log" (a filename seed is never presented as logged). A value
+    that differs between runs is listed in full with a warning, never chosen. One
+    paragraph; grid boxes as bullets when there is more than one target. File
+    basenames only (logs hold full paths). Redocking sentence only for an RMSD computed
+    against a confirmed experimental reference; it reports the top-ranked pose of
+    each run (range across runs).
+19. **Formula injection:** text starting with = + - @ tab CR is stored as text in
+    Excel and prefixed with ' in CSV. Numbers are untouched.
+20. **Run metadata:** SHA-256 of the original uploaded bytes (excluded files listed
+    too), the names/seed each file was analysed as, package versions, analysis time
+    (stored when Run is pressed), and git commit (full + short + dirty, untracked files
+    count as dirty) when available; the `git` key is omitted otherwise.
+21. **ZIPs:** fixed 1980 timestamps, sorted entries, fixed `create_system`, so identical
+    input gives identical bytes on every OS. Entry names are validated; target names
+    go through `safe_name` before becoming file names.
 
 ## Known issues to address later
 - Heatmap "(n=4)" label is tight in its cell → put the mark on a second line (Phase 6).
@@ -73,6 +91,13 @@ Test suite: 318 passed, 0 warnings, after Phase 4 (about 90 s; figure tests domi
   on the manual checklist below.
 - Figure builds are slower (~0.5-1.5 s each) because the layout is settled at 300 dpi;
   cached in the app.
+- results.xlsx "modified" property is set by openpyxl to the save time; only "created"
+  equals the analysis time. Not fixable without rewriting the file after saving.
+- Spinners on the ZIP build are not visible to AppTest: manual check only.
+- The "seed used" shown for a PDBQT in the recognition table comes from the filename
+  pairing; retyping a recognised PDBQT's target/ligand does not update it (Summary is
+  still correct).
+- Score column on screen has no fixed format (Excel does: 0.000).
 - README: add a "How this was built" section (AI-assisted, decisions and review by me).
 - Repo is private; make public after Phase 6.
 
@@ -88,9 +113,18 @@ Run with `streamlit run app.py`, then:
 7. Download a CSV, open it in Excel: Δ, Å and − display correctly.
 8. Narrow the window: tables and figures stay usable.
 
-## Next step: Phase 5 (exports & reproducibility)
-Ask for the plan first. Excel (one sheet per table), ZIP of all figures, methods
-paragraph from parsed log values only ("not recorded" when missing), run_metadata.json.
+## Phase 5 manual checks
+1. Export tab → open results.xlsx in Excel: every sheet, Δ/Å headers, decimals, Read me.
+2. "Prepare figures ZIP and full results bundle": the spinner labels appear; unzip both.
+3. Read methods.txt as a reviewer: is anything claimed that the logs don't support?
+   Compute an RMSD on the RMSD tab and check the redocking sentence appears.
+4. `Get-FileHash vina_test_data\logs\1iep__p59_5x72.log` equals the SHA-256 in
+   run_metadata.json (lower-case it first).
+
+## Next step: Phase 6 (polish)
+Ask for the plan first. README (purpose, screenshot, install/run, input format,
+limitations, how to cite Vina), LICENSE (MIT), deployment notes for Streamlit Community
+Cloud, input-safety review, CI on Python 3.11, and the known issues above.
 
 ## How to resume in a new session
 Paste this into Claude Code:
@@ -98,4 +132,4 @@ Paste this into Claude Code:
 > Read PROGRESS.md, MASTER_PROMPT_vina_analyser.md and vina_test_data/README.md.
 > Run `git status`, `git log --oneline -10` and `pytest -q`, and report the results.
 > If there are uncommitted changes, show me `git diff --stat` and don't discard
-> anything. Then give me the Phase 5 plan and wait for approval.
+> anything. Then give me the Phase 6 plan and wait for approval.
