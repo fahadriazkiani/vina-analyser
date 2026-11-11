@@ -277,3 +277,14 @@ def test_renamed_file_with_typed_names_matches_the_original():
 def test_streamlit_upload_limit_matches_the_package_limit():
     config = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
     assert config["server"]["maxUploadSize"] == MAX_UPLOAD_MB
+
+
+def test_theme_is_light_and_uses_the_figure_blue():
+    # Figures are white-background PNGs, so a dark theme would frame them badly; the
+    # primary colour is the Okabe-Ito blue of the bars, leaving red to mean "problem".
+    from vina_analyser.plots import BAR_COLOUR
+
+    theme = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))["theme"]
+    assert theme["base"] == "light"
+    assert theme["primaryColor"].upper() == BAR_COLOUR.upper()
+    assert theme["backgroundColor"].upper() == "#FFFFFF"

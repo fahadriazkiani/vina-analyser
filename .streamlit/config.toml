@@ -8,3 +8,17 @@ maxUploadSize = 50
 [browser]
 # Don't send usage statistics to Streamlit.
 gatherUsageStats = false
+
+[theme]
+# Calm and readable for long sessions, matching the Okabe-Ito figures.
+# Light base: the figures are PNGs with white backgrounds.
+base = "light"
+# Okabe-Ito blue, the bar colour in the figures. Replaces Streamlit's default red,
+# which made "Run analysis" look destructive and competed with st.error.
+primaryColor = "#0072B2"
+backgroundColor = "#FFFFFF"
+# Cool light grey for tables, cards and the sidebar.
+secondaryBackgroundColor = "#F1F4F8"
+# Near-black, softer than pure black.
+textColor = "#1A1D23"
+font = "sans serif"
