@@ -68,3 +68,15 @@ no symmetry correction): seed42 0.91 Å, seed1 0.90 Å, seed2 0.34 Å, seed3 0.9
 Note: Vina 1.2.x writes results to stdout, not a `--log` file; logs here are captured stdout.
 Each output PDBQT also stores the score in `REMARK VINA RESULT:` lines. These are an
 independent source the parser should agree with.
+
+## Licence
+The prepared input structures and grid boxes (`receptors/`, `ligands/`, `configs/`) are
+taken unchanged from the examples of the official AutoDock Vina repository
+(https://github.com/ccsb-scripps/AutoDock-Vina, `example/`), which is distributed under
+the Apache License, Version 2.0. A copy of that licence is in `LICENSES/Apache-2.0.txt`
+at the repository root; the Vina repository has no NOTICE file. The underlying
+structures come from the Protein Data Bank (entries 1IEP and 5X72).
+
+The output files in `results/` and `logs/` were produced for this dataset by running
+AutoDock Vina v1.2.5 on those inputs, and are distributed with the rest of this
+repository under its MIT licence.
