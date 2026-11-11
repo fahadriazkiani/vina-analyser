@@ -105,7 +105,8 @@ def test_backend_is_agg_so_no_display_is_needed():
 
 def test_figures_are_single_column_width():
     assert FIGURE_WIDTH_CM == pytest.approx(8.5)
-    figure = affinity_heatmap(poses_to_best(poses_frame()))
+    # One real pose: an empty table is refused (see the single-target tests below).
+    figure = affinity_heatmap(poses_to_best(poses_frame({})))
     width_cm = figure.get_size_inches()[0] * 2.54
     assert width_cm == pytest.approx(8.5, abs=0.01)
     assert all(size <= 9 for size in _font_sizes(figure))
@@ -491,3 +492,80 @@ def test_svg_carries_no_timestamp(best, tmp_path):
     text = svg.read_text(encoding="utf-8")
     assert "<dc:date>" not in text
     assert "Date" not in text
+
+
+# ------------------------------------------------- single target (the common case)
+
+
+def _no_warnings(build):
+    """Build a figure and fail on any warning, matplotlib's included."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        return build()
+
+
+@pytest.mark.parametrize(
+    "targets, ligands",
+    [(["1iep"], None), (["1iep"], ["p59_5x72"]), (["1iep", "5x72"], ["p59_5x72"])],
+    ids=["one-row", "one-cell", "one-column"],
+)
+def test_heatmap_with_one_row_or_column_renders_without_warnings(best, targets, ligands):
+    subset = best[best["target"].isin(targets)]
+    if ligands:
+        subset = subset[subset["ligand"].isin(ligands)]
+    figure = _no_warnings(lambda: affinity_heatmap(subset))
+    axes = figure.axes[0]
+    n_rows, n_columns = len(targets), subset["ligand"].nunique()
+    # Each cell spans one unit, centred on its index; rows run top to bottom.
+    assert axes.get_xlim() == pytest.approx((-0.5, n_columns - 0.5))
+    assert axes.get_ylim() == pytest.approx((n_rows - 0.5, -0.5))
+
+
+def test_single_target_heatmap_annotates_every_ligand(best):
+    subset = best[best["target"] == "1iep"]
+    figure = affinity_heatmap(subset)
+    texts = {text.get_text() for text in figure.axes[0].texts}
+    assert "−13.27 (n=4)" in texts
+    assert "−8.46" in texts
+    assert len(figure.axes[0].texts) == 5
+
+
+def test_one_cell_heatmap_still_has_a_usable_colour_scale(best):
+    subset = best[(best["target"] == "1iep") & (best["ligand"] == "p59_5x72")]
+    figure = _no_warnings(lambda: affinity_heatmap(subset))
+    low, high = figure.axes[0].images[0].get_clim()
+    assert low < -8.463 < high  # a range around the only value, not a zero-width scale
+
+
+def test_empty_table_is_refused_clearly():
+    empty = poses_to_best(poses_frame())
+    with pytest.raises(ValueError, match="nothing to plot"):
+        affinity_heatmap(empty)
+
+
+def test_figure_bytes_match_the_saved_files(best, tmp_path):
+    from vina_analyser.plots import figure_bytes
+
+    figure = affinity_heatmap(best)
+    png, svg = save_figure(figure, tmp_path / "heatmap")
+    assert figure_bytes(figure, "png") == png.read_bytes()
+    assert figure_bytes(figure, "svg") == svg.read_bytes()
+
+
+@pytest.mark.parametrize("kind", ["heatmap", "bars", "strip"])
+def test_every_figure_type_saves_identically_every_time(real, best, kind):
+    # Constrained layout used to move the heatmap axes a little on each save, so the
+    # picture shown in the app and the one downloaded could differ.
+    from vina_analyser.plots import figure_bytes
+
+    build = {
+        "heatmap": lambda: affinity_heatmap(best),
+        "bars": lambda: ranked_bars(best, "1iep", control="imatinib_1iep"),
+        "strip": lambda: pose_strip(real.poses, "1iep"),
+    }[kind]
+    figure = build()
+    saves = [figure_bytes(figure, "png") for _ in range(3)] + [figure_bytes(figure, "svg") for _ in range(2)]
+    assert saves[0] == saves[1] == saves[2]
+    assert saves[3] == saves[4]

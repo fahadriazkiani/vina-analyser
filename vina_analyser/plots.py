@@ -74,9 +74,37 @@ def _styled(function):
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
         with plt.rc_context(RC):
-            return function(*args, **kwargs)
+            figure = function(*args, **kwargs)
+            _settle_layout(figure)
+            return figure
 
     return wrapper
+
+
+MAX_LAYOUT_PASSES = 10
+
+
+def _settle_layout(figure) -> None:
+    """Run constrained layout until the axes stop moving, then freeze it.
+
+    Each save runs one more layout pass starting from where the last one left off.
+    The heatmap with its horizontal colour bar needs about three passes to settle, so
+    without this, saving the same figure twice gave slightly different files. Passes
+    are run at the export resolution, because text extents depend on it.
+    """
+    import io
+
+    def positions():
+        return [tuple(axes.get_position().bounds) for axes in figure.axes]
+
+    before = positions()
+    for _ in range(MAX_LAYOUT_PASSES):
+        figure.savefig(io.BytesIO(), format="png", dpi=DPI)
+        after = positions()
+        if after == before:
+            break
+        before = after
+    figure.set_layout_engine("none")
 
 
 def _new_figure(height_cm: float):
@@ -133,6 +161,9 @@ def affinity_heatmap(best: pd.DataFrame):
     """Best score per target and ligand, on one shared colour scale in kcal/mol."""
     grid = best.pivot_table(index="target", columns="ligand", values="affinity", aggfunc="min")
     grid = grid.sort_index().sort_index(axis=1)
+    if grid.empty:
+        # An empty grid has zero-width axes, which matplotlib can only warn about.
+        raise ValueError("The best-pose table has no scores, so there is nothing to plot.")
     values = np.ma.masked_invalid(grid.to_numpy(dtype=float))
     # Where a cell is the best of several seeds, say so: the score alone would hide
     # that one ligand was sampled more than the others.
@@ -148,6 +179,14 @@ def affinity_heatmap(best: pd.DataFrame):
     # A pair that was never docked shows as a blank cell, never as a zero.
     colours = plt.get_cmap(HEATMAP_CMAP).with_extremes(bad=MISSING_COLOUR)
     image = axes.imshow(values, cmap=colours, aspect="auto")
+    # Explicit limits: each cell spans one unit around its index, whatever the grid
+    # shape. One target (one row) is the common case, so it must not rely on autoscaling.
+    n_rows, n_columns = values.shape
+    axes.set_xlim(-0.5, n_columns - 0.5)
+    axes.set_ylim(n_rows - 0.5, -0.5)  # first target at the top
+    low, high = image.get_clim()
+    if low == high:  # one score, or several identical ones: give the colour scale a width
+        image.set_clim(low - 0.5, high + 0.5)
 
     axes.set_xticks(range(len(grid.columns)), short_labels(grid.columns), rotation=45, ha="right")
     axes.set_yticks(range(len(grid.index)), list(grid.index))
@@ -376,13 +415,34 @@ def pose_strip_caption(target: str) -> str:
 # -------------------------------------------------------------------- saving
 
 
+# Dropping Software and Date keeps repeated saves byte-identical.
+_SAVE_OPTIONS = {
+    "png": {"format": "png", "dpi": DPI, "metadata": {"Software": None}},
+    "svg": {"format": "svg", "metadata": {"Date": None}},
+}
+
+
+def figure_bytes(figure, fmt: str) -> bytes:
+    """The figure as PNG or SVG bytes, identical to what save_figure writes.
+
+    The app shows and offers exactly these bytes, so what is on screen is what is
+    downloaded.
+    """
+    import io
+
+    buffer = io.BytesIO()
+    figure.savefig(buffer, **_SAVE_OPTIONS[fmt])
+    return buffer.getvalue()
+
+
 def save_figure(figure, stem) -> tuple[Path, Path]:
     """Write `<stem>.png` at 300 dpi and `<stem>.svg`, both free of timestamps."""
     stem = Path(stem)
     stem.parent.mkdir(parents=True, exist_ok=True)
     png = stem.with_suffix(".png")
     svg = stem.with_suffix(".svg")
-    # Dropping Software and Date keeps repeated saves byte-identical.
-    figure.savefig(png, format="png", dpi=DPI, metadata={"Software": None})
-    figure.savefig(svg, format="svg", metadata={"Date": None})
+    # Written as bytes: given a path, matplotlib writes SVG in text mode, which turns
+    # line endings into CRLF on Windows and makes the file differ between systems.
+    png.write_bytes(figure_bytes(figure, "png"))
+    svg.write_bytes(figure_bytes(figure, "svg"))
     return png, svg
