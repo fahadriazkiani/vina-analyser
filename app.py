@@ -370,7 +370,9 @@ def show_rmsd(results: ParsedResults, data: dict):
     )
     uploaded = st.file_uploader(
         "Reference ligand (PDBQT, heavy atoms in the same order as the docked ligand)",
-        type=["pdbqt", "sdf", "mol", "mol2"],  # SDF etc. accepted only to explain the refusal
+        # PDBQT only, so the hint under the uploader matches the instruction above it.
+        # An SDF renamed to .pdbqt is still refused by its content, with the reason.
+        type=["pdbqt"],
         key="reference_upload",
     )
     signature = (uploaded.name, uploaded.size, uploaded.file_id) if uploaded else None

@@ -469,3 +469,17 @@ def test_heatmap_caption_in_the_app_says_when_scores_are_left_out():
     button(at, "run_analysis").click().run()
     assert not at.exception, at.exception
     assert any("best-pose table" in c.value for c in tab(at, "Figures").caption)
+
+
+# ------------------------------------------------------- reference uploader
+
+
+def test_reference_uploader_hint_agrees_with_the_instruction(analysed):
+    uploader = next(e for e in analysed.get("file_uploader") if e.proto.id.endswith("reference_upload"))
+    # The hint under the uploader is generated from these types.
+    assert list(uploader.proto.type) == [".pdbqt"]
+    instruction = next(m.value for m in tab(analysed, "RMSD").markdown if "Heavy-atom RMSD" in m.value)
+    assert "PDBQT references only" in instruction
+    # The reason other formats are refused is stated beside the uploader.
+    assert "SDF" in instruction and "atom mapping" in instruction
+    assert "PDBQT" in uploader.proto.label
