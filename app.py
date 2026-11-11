@@ -175,6 +175,22 @@ def show_figure(kind: str, table: pd.DataFrame, caption: str, target=None, contr
     st.caption(caption)
 
 
+def number_formats(frame: pd.DataFrame) -> dict:
+    """The decimals the Excel export uses (report.NUMBER_FORMATS), for the same columns
+    on screen. Without a fixed format 0.3190 shows as 0.319 beside 0.3587."""
+    config = {}
+    for column in frame.columns:
+        excel = report.NUMBER_FORMATS.get(column)
+        if excel:
+            decimals = len(excel.partition(".")[2])
+            config[column] = st.column_config.NumberColumn(format=f"%.{decimals}f")
+    return config
+
+
+def show_table(frame: pd.DataFrame) -> None:
+    st.dataframe(frame, hide_index=True, width="stretch", column_config=number_formats(frame))
+
+
 def best_view(best: pd.DataFrame) -> pd.DataFrame:
     order = [
         "target", "rank", "ligand", "affinity", "ligand_efficiency", "delta_vs_control",
@@ -303,13 +319,7 @@ def show_results(results: ParsedResults, data: dict, analysed: dict) -> None:
         if best.empty:
             st.info("No pose has coordinates, so there is nothing to rank. Upload the output PDBQT files.")
         else:
-            st.dataframe(
-                best_view(best), hide_index=True, width="stretch",
-                column_config={
-                    # Fixed decimals: otherwise 0.3190 shows as 0.319 beside 0.3587.
-                    analysis.LABELS["ligand_efficiency"]: st.column_config.NumberColumn(format="%.4f"),
-                },
-            )
+            show_table(best_view(best))
             # The seed note belongs with the seed table on the Reproducibility tab.
             show_notes(note for note in result.notes if note != analysis.NOTES["seed_summary"])
         st.subheader("Runs")
@@ -319,7 +329,7 @@ def show_results(results: ParsedResults, data: dict, analysed: dict) -> None:
             "differ. That is expected, not an error. Where both exist, the 3-decimal "
             "PDBQT score is used."
         )
-        st.dataframe(results.runs[list(RUN_COLUMNS)].rename(columns=RUN_COLUMNS), hide_index=True, width="stretch")
+        show_table(results.runs[list(RUN_COLUMNS)].rename(columns=RUN_COLUMNS))
 
     targets = sorted(best["target"].unique())
     with figures:
@@ -338,7 +348,7 @@ def show_results(results: ParsedResults, data: dict, analysed: dict) -> None:
         if repeated.empty:
             st.info("No target and ligand pair was run more than once, so there is no spread to report.")
         else:
-            st.dataframe(seeds_view(repeated), hide_index=True, width="stretch")
+            show_table(seeds_view(repeated))
         if single:
             st.caption(f"{single} target and ligand pairs have a single run: no spread available, so they are not listed.")
         st.caption(analysis.NOTES["seed_summary"])
@@ -421,7 +431,7 @@ def show_rmsd(results: ParsedResults, data: dict):
         return None
 
     show_issues(outcome.issues, heading=False)
-    st.dataframe(report.display_table(outcome.table), hide_index=True, width="stretch")
+    show_table(report.display_table(outcome.table))
     show_notes(outcome.notes)
     st.caption("Atoms are matched in file order; no superposition and no symmetry correction are applied.")
     return report.Redocking(

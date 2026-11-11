@@ -375,3 +375,27 @@ def test_every_cache_of_user_data_expires():
     assert len(caches) >= 3
     for name, decorator in caches:
         assert "ttl" in {keyword.arg for keyword in decorator.keywords}, name
+
+
+# ------------------------------------------------------------ number formats
+
+
+def formats_of(element) -> dict:
+    config = json.loads(element.proto.columns or "{}")
+    return {name: c.get("type_config", {}).get("format") for name, c in config.items()}
+
+
+def test_scores_on_screen_use_the_same_decimals_as_excel(analysed):
+    from vina_analyser.report import NUMBER_FORMATS
+
+    printf = {"0.000": "%.3f", "0.0000": "%.4f", "0.00": "%.2f"}
+    checked = 0
+    for element in analysed.dataframe:
+        formats = formats_of(element)
+        for column in element.value.columns:
+            if column in NUMBER_FORMATS:
+                assert formats.get(column) == printf[NUMBER_FORMATS[column]], column
+                checked += 1
+    assert checked >= 5  # score, LE, mean, SD, range at least
+    summary = next(e for e in tab(analysed, "Summary").dataframe if LABELS["affinity"] in e.value.columns)
+    assert formats_of(summary)[LABELS["affinity"]] == "%.3f"
