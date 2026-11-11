@@ -49,6 +49,14 @@ def frames(container) -> list[pd.DataFrame]:
     return [element.value for element in container.dataframe]
 
 
+def frame_with(container, column) -> pd.DataFrame:
+    """The table that has `column`; fails the test, never skips, if there is none."""
+    for frame in frames(container):
+        if column in frame.columns:
+            return frame
+    pytest.fail(f"No table with a {column!r} column is shown.")
+
+
 @pytest.fixture(scope="module")
 def analysed() -> AppTest:
     at = fresh()
@@ -266,8 +274,9 @@ def test_runs_preview_shows_the_log_seed_before_analysis():
 
 
 def test_runs_preview_matches_the_runs_analysed(analysed):
-    preview = next(frame for frame in frames(analysed) if "seed used" in frame.columns)
-    runs = next(frame for frame in frames(analysed) if "Modes in log" in frame.columns)
+    preview = frame_with(analysed, "seed used")
+    runs = frame_with(tab(analysed, "Summary"), "Modes in log")
+    assert len(preview) == len(runs) == 13
     key = ["target", "ligand", "PDBQT file"]
     shown = preview.sort_values(key)["seed used"].tolist()
     analysed_seeds = runs.sort_values(key)["seed"]
@@ -295,8 +304,8 @@ def test_methods_in_the_app_credits_this_checkout(analysed):
     assert f"Vina Docking Results Analyser v{__version__}" in methods
     assert "is not recorded in Vina log files" in methods
     git = git_info(ROOT)
-    if git is not None:
-        assert f"(commit {git['commit_short']}" in methods
+    assert git is not None, "the tests run from a git checkout, so the commit must be found"
+    assert f"(commit {git['commit_short']}" in methods
 
 
 def test_bundle_is_built_on_request_with_matching_hashes():

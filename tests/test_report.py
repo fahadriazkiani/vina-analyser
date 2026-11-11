@@ -514,9 +514,14 @@ def test_metadata_is_json_without_absolute_paths(real, raw_files, redocking):
 # ------------------------------------------------------------------------ git
 
 
+def require_git():
+    # The project is developed and tested from a git checkout, locally and in CI;
+    # without git these checks would be skipped, so they fail instead.
+    assert shutil.which("git") is not None, "git must be installed to run the tests"
+
+
 def test_git_info_from_this_checkout():
-    if shutil.which("git") is None:
-        pytest.skip("git is not installed here")
+    require_git()
     info = git_info(ROOT)
     full = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     assert info["commit"] == full
@@ -526,8 +531,7 @@ def test_git_info_from_this_checkout():
 
 
 def test_git_info_records_a_dirty_working_tree(tmp_path):
-    if shutil.which("git") is None:
-        pytest.skip("git is not installed here")
+    require_git()
 
     def git(*args):
         subprocess.run(
@@ -571,8 +575,7 @@ def test_git_info_without_git_and_without_a_checkout_is_none(tmp_path):
 
 def test_git_info_without_git_reads_the_commit_from_dot_git():
     # Streamlit Community Cloud may have no git binary; the commit is still in .git.
-    if shutil.which("git") is None:
-        pytest.skip("git is needed to know the expected commit")
+    require_git()
     full = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     info = git_info(ROOT, runner=no_git)
     assert info == {"commit": full, "commit_short": full[:7], "dirty": None}
@@ -610,5 +613,4 @@ def test_unknown_dirty_state_is_null_in_metadata_and_silent_in_methods(real, raw
 
 def test_metadata_omits_git_cleanly_when_unavailable(real, raw_files, tmp_path):
     assert "git" not in metadata(real, raw_files, repo_dir=tmp_path)
-    if shutil.which("git"):
-        assert "commit" in metadata(real, raw_files)["git"]
+    assert "commit" in metadata(real, raw_files)["git"]  # this checkout, by git or .git

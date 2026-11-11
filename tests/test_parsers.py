@@ -307,11 +307,17 @@ def test_runs_table_has_one_row_per_docking_run(real):
 
 
 def test_log_only_modes_are_always_the_lowest_ranked(real):
+    with_dropped = 0
     for _, run in real.poses.groupby(["target", "ligand", "seed"]):
         kept = run.loc[run["has_coordinates"], "pose"]
         dropped = run.loc[~run["has_coordinates"], "pose"]
-        if len(dropped):
-            assert kept.max() < dropped.min()
+        if dropped.empty:
+            continue  # every mode kept: nothing to order
+        with_dropped += 1
+        assert kept.max() < dropped.min()
+    # Imatinib's five runs (four on 1iep, one on 5x72) drop modes; without them this
+    # test would check nothing.
+    assert with_dropped == 5
 
 
 # --------------------------------------------------------- log vs PDBQT agreement
