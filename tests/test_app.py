@@ -260,3 +260,55 @@ def test_recognition_table_shows_the_log_seed():
     assert table.loc["1iep__imatinib_1iep.log", "seed"] == "42"
     assert table.loc["1iep__imatinib_1iep.log", "seed_source"] == "log header"
     assert "None" not in set(table["seed"])
+
+
+# --------------------------------------------------------------------- export
+
+
+def downloads(at) -> set:
+    return {element.key for element in at.get("download_button")}
+
+
+def test_export_tab_offers_excel_methods_and_metadata(analysed):
+    keys = downloads(analysed)
+    assert {"download_xlsx", "download_methods", "download_metadata"} <= keys
+    assert any("AutoDock Vina v1.2.5" in block.value for block in analysed.code)
+
+
+def test_bundle_is_built_on_request_with_matching_hashes():
+    import hashlib
+    import io
+    import json
+    import zipfile
+
+    at = fresh()
+    button(at, "load_example").click().run()
+    button(at, "run_analysis").click().run()
+    assert "download_bundle" not in downloads(at)
+    button(at, "prepare_bundle").click().run()
+    assert not at.exception, at.exception
+    assert {"download_bundle", "download_figures_zip"} <= downloads(at)
+
+    bundle = at.session_state["prepared"]["bundle"]
+    with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+        names = set(archive.namelist())
+        meta = json.loads(archive.read("vina_results/run_metadata.json"))
+    assert {"vina_results/results.xlsx", "vina_results/methods.txt", "vina_results/README.txt"} <= names
+    assert "vina_results/figures/heatmap_best_affinity.png" in names
+    for entry in meta["input_files"]:
+        path = next(DATA.glob(f"*/{entry['name']}"))
+        assert entry["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+        # The names shown in the recognition table are what the metadata records.
+        assert entry["included"] is True
+        assert entry["target"] and entry["ligand"]
+    seeds = {e["name"]: e["seed"] for e in meta["input_files"]}
+    assert seeds["1iep__imatinib_1iep_seed2_out.pdbqt"] == 2
+
+
+def test_prepared_bundle_is_dropped_when_the_control_changes():
+    at = fresh()
+    button(at, "load_example").click().run()
+    button(at, "run_analysis").click().run()
+    button(at, "prepare_bundle").click().run()
+    at.selectbox(key="control").set_value("imatinib_1iep").run()
+    assert "download_bundle" not in downloads(at)

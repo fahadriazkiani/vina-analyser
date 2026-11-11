@@ -5,6 +5,7 @@ its own. Run with:  streamlit run app.py
 """
 
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -29,21 +30,17 @@ CACHE_ENTRIES = 8
 FIGURE_CACHE_ENTRIES = 32
 FIGURE_WIDTH_PX = 640
 
-LIMITATIONS = """
-**Read before interpreting any number on this page**
+GIT_CACHE_SECONDS = 60
 
-- **A docking score is not a binding affinity.** Vina scores are estimates from an
-  empirical scoring function, not measured affinities, and say nothing about activity
-  in a cell or an organism.
-- **The receptor is rigid.** Protein flexibility, water molecules and changes in
-  protonation are not modelled.
-- **No comparison across targets.** Scores are ranked and compared only within one
-  target, grid box and scoring function, never across targets.
-- **Vina's scoring error is roughly 2–3 kcal/mol.** Smaller differences between
-  ligands should not be read as differences in binding.
-- Scores are not comparable across different scoring functions or very different
-  grid boxes.
-"""
+
+def limitations_markdown() -> str:
+    """The limitations box, from the same list the Excel and ZIP exports use."""
+    lines = ["**Read before interpreting any number on this page**", ""]
+    for text in report.LIMITATIONS:
+        head, _, rest = text.partition(". ")
+        lines.append(f"- **{head}.** {rest}" if rest else f"- {text}")
+    return "\n".join(lines)
+
 
 RUN_COLUMNS = {
     "target": "target",
@@ -187,7 +184,7 @@ def main() -> None:
     st.set_page_config(page_title="Vina Docking Results Analyser", layout="wide")
     st.title("Vina Docking Results Analyser")
     with st.container(border=True):
-        st.markdown(LIMITATIONS)
+        st.markdown(limitations_markdown())
 
     # 1. Input --------------------------------------------------------------
     st.header("1. Files")
@@ -239,7 +236,9 @@ def main() -> None:
 
     blocked = not data or bool(problems)
     if st.button("Run analysis", key="run_analysis", type="primary", disabled=blocked):
-        st.session_state["analysed"] = {"key": key, "names": names}
+        # The analysis time goes into run_metadata.json and the workbook, so it is
+        # stored once here and not recomputed on every rerun.
+        st.session_state["analysed"] = {"key": key, "names": names, "at": datetime.now(timezone.utc)}
     if not data:
         st.caption("Upload files or load the example dataset to begin.")
         return
@@ -254,10 +253,10 @@ def main() -> None:
     # 3. Results ---------------------------------------------------------------
     texts = {name: decode_text(data["files"][name]) for name in names}
     results = parse(texts, names)
-    show_results(results, data)
+    show_results(results, data, analysed)
 
 
-def show_results(results: ParsedResults, data: dict) -> None:
+def show_results(results: ParsedResults, data: dict, analysed: dict) -> None:
     st.header("3. Results")
     ligands = sorted(results.poses["ligand"].unique())
     choice = st.selectbox(
@@ -321,10 +320,10 @@ def show_results(results: ParsedResults, data: dict) -> None:
         st.caption(analysis.NOTES["scoring_error"])
 
     with rmsd:
-        rmsd_table = show_rmsd(results, data)
+        redocking = show_rmsd(results, data)
 
     with export:
-        show_export(result, results, rmsd_table, targets, control)
+        show_export(result, results, redocking, targets, control, data, analysed)
 
 
 def show_rmsd(results: ParsedResults, data: dict):
@@ -342,15 +341,14 @@ def show_rmsd(results: ParsedResults, data: dict):
     signature = (uploaded.name, uploaded.size, uploaded.file_id) if uploaded else None
     if signature and signature != st.session_state.get("reference_signature"):
         st.session_state["reference_signature"] = signature
-        st.session_state["reference"] = {"name": uploaded.name, "text": decode_text(uploaded.getvalue())}
+        content = uploaded.getvalue()
+        st.session_state["reference"] = {"name": uploaded.name, "bytes": content, "text": decode_text(content)}
     if data["origin"] == "example" and st.button(
         "Use the example reference (ligands/imatinib_1iep.pdbqt, crystal coordinates of imatinib in 1IEP)",
         key="use_example_reference",
     ):
-        st.session_state["reference"] = {
-            "name": EXAMPLE_REFERENCE.name,
-            "text": decode_text(EXAMPLE_REFERENCE.read_bytes()),
-        }
+        content = EXAMPLE_REFERENCE.read_bytes()
+        st.session_state["reference"] = {"name": EXAMPLE_REFERENCE.name, "bytes": content, "text": decode_text(content)}
 
     reference = st.session_state.get("reference")
     if not reference:
@@ -401,40 +399,164 @@ def show_rmsd(results: ParsedResults, data: dict):
     st.dataframe(report.display_table(outcome.table), hide_index=True, width="stretch")
     show_notes(outcome.notes)
     st.caption("Atoms are matched in file order; no superposition and no symmetry correction are applied.")
-    return outcome.table
+    return report.Redocking(
+        target=target,
+        ligand=ligand,
+        reference_name=reference["name"],
+        reference_sha256=hashlib.sha256(reference["bytes"]).hexdigest(),
+        confirmed=confirmed,
+        table=outcome.table,
+    )
 
 
-def show_export(result, results: ParsedResults, rmsd_table, targets, control) -> None:
-    st.markdown("Tables are CSV in UTF-8 with a byte-order mark, so Excel shows Δ, Å and − correctly.")
+@st.cache_data(ttl=GIT_CACHE_SECONDS, show_spinner=False)
+def cached_git_info() -> dict | None:
+    # Three quick git calls; cached briefly so they don't run on every widget click.
+    return report.git_info(ROOT)
+
+
+SHEET_NAMES = {
+    "best_poses.csv": "Best poses",
+    "seed_summary.csv": "Seed summary",
+    "all_poses.csv": "All poses",
+    "runs.csv": "Runs",
+    "issues.csv": "Issues",
+    "rmsd.csv": "RMSD",
+}
+
+
+def export_tables(result, results: ParsedResults, redocking) -> dict:
     tables = {
         "best_poses.csv": best_view(result.best) if not result.best.empty else None,
         "seed_summary.csv": seeds_view(result.seeds),
-        "all_poses.csv": results.poses,
+        "all_poses.csv": report.display_table(results.poses),
         "runs.csv": results.runs,
         "issues.csv": issue_frame(result.issues),
-        "rmsd.csv": report.display_table(rmsd_table) if rmsd_table is not None else None,
+        "rmsd.csv": report.display_table(redocking.table) if redocking is not None else None,
     }
+    return {name: table for name, table in tables.items() if table is not None}
+
+
+def show_export(result, results: ParsedResults, redocking, targets, control, data, analysed) -> None:
+    tables = export_tables(result, results, redocking)
+    methods = report.methods_text(results.runs, redocking=redocking)
+
+    st.subheader("Methods paragraph")
+    st.caption(
+        'Built only from values in the Vina logs; anything missing says "not recorded". '
+        "The redocking sentence appears only after a confirmed RMSD on the RMSD tab."
+    )
+    st.code(methods.text, language=None, wrap_lines=True)
+    show_issues(methods.issues, heading=False)
+
+    readme = ["Notes", *result.notes, "", "Methods", *methods.text.splitlines()]
+    workbook = report.workbook_bytes(
+        {SHEET_NAMES[name]: table for name, table in tables.items()}, readme, analysed["at"]
+    )
+    metadata = report.metadata_json(
+        report.run_metadata(
+            files=data["files"],
+            names=analysed["names"],
+            runs=results.runs,
+            origin=data["origin"],
+            control=control,
+            redocking=redocking,
+            analysed_at=analysed["at"],
+            git=cached_git_info(),
+        )
+    )
+
+    st.subheader("Downloads")
+    st.markdown("Tables are CSV in UTF-8 with a byte-order mark, so Excel shows Δ, Å and − correctly.")
+    st.download_button(
+        "Download results.xlsx (one sheet per table)", workbook, file_name="results.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_xlsx", on_click="ignore",
+    )
+    st.download_button(
+        "Download methods.txt", methods.text.encode("utf-8"), file_name="methods.txt",
+        mime="text/plain", key="download_methods", on_click="ignore",
+    )
+    st.download_button(
+        "Download run_metadata.json", metadata, file_name="run_metadata.json",
+        mime="application/json", key="download_metadata", on_click="ignore",
+    )
     for filename, table in tables.items():
-        if table is None:
-            continue
         st.download_button(
             f"Download {filename}", report.csv_bytes(table), file_name=filename,
             mime="text/csv", key=f"download_{filename}", on_click="ignore",
         )
 
-    if not result.best.empty:
-        st.subheader("Figures (300 dpi PNG or SVG)")
-        options = {"Heatmap of best scores": ("heatmap", result.best, None, "heatmap_best_affinity")}
-        for target in targets:
-            options[f"Ranked scores, {target}"] = ("ranked", result.best, target, f"ranked_{target}")
-            options[f"All poses, {target}"] = ("strip", results.poses, target, f"poses_{target}")
-        label = st.selectbox("Figure", list(options), key="export_figure")
-        kind, table, target, stem = options[label]
-        files = figure_files(kind, table, target, control)
-        st.download_button("Download PNG", files["png"], file_name=f"{stem}.png", mime="image/png", key="download_png", on_click="ignore")
-        st.download_button("Download SVG", files["svg"], file_name=f"{stem}.svg", mime="image/svg+xml", key="download_svg", on_click="ignore")
+    if result.best.empty:
+        return
+    specs = report.figure_specs(targets)
+    st.subheader("Figures (300 dpi PNG or SVG)")
+    labels = {
+        "heatmap": lambda spec: "Heatmap of best scores",
+        "ranked": lambda spec: f"Ranked scores, {spec.target}",
+        "strip": lambda spec: f"All poses, {spec.target}",
+    }
+    options = {labels[spec.kind](spec): spec for spec in specs}
+    spec = options[st.selectbox("Figure", list(options), key="export_figure")]
+    files = spec_files(spec, result.best, results.poses, control)
+    st.download_button(
+        "Download PNG", files["png"], file_name=f"{spec.stem}.png", mime="image/png",
+        key="download_png", on_click="ignore",
+    )
+    st.download_button(
+        "Download SVG", files["svg"], file_name=f"{spec.stem}.svg", mime="image/svg+xml",
+        key="download_svg", on_click="ignore",
+    )
 
-    st.info("Coming in Phase 5: Excel workbook, ZIP of all figures, methods paragraph and run_metadata.json.")
+    # Drawing every figure takes a few seconds, so the ZIPs are made on request, and
+    # dropped as soon as anything they depend on changes.
+    st.subheader("Everything at once")
+    signature = (
+        content_key(data["files"]),
+        tuple(sorted((k, tuple(sorted(v.items()))) for k, v in analysed["names"].items())),
+        analysed["at"].isoformat(),
+        control,
+        None if redocking is None else (redocking.target, redocking.ligand, redocking.reference_sha256),
+    )
+    prepared = st.session_state.get("prepared")
+    if prepared is not None and prepared["signature"] != signature:
+        st.session_state.pop("prepared")
+        prepared = None
+    if prepared is None and st.button("Prepare figures ZIP and full results bundle", key="prepare_bundle"):
+        figures, captions = {}, {}
+        with st.spinner(f"Drawing {len(specs)} figures for the ZIP…"):
+            for item in specs:
+                figures[item.stem] = spec_files(item, result.best, results.poses, control)
+                captions[item.stem] = spec_caption(item)
+            figures_zip = report.figures_zip(figures, captions)
+        with st.spinner("Building the results bundle (Excel, tables, figures, methods, metadata)…"):
+            bundle = report.bundle_zip(
+                tables=tables, workbook=workbook, methods=methods.text,
+                metadata=metadata, figures=figures, captions=captions,
+            )
+        prepared = {"signature": signature, "figures_zip": figures_zip, "bundle": bundle}
+        st.session_state["prepared"] = prepared
+    if prepared is not None:
+        st.download_button(
+            "Download figures.zip", prepared["figures_zip"], file_name="figures.zip",
+            mime="application/zip", key="download_figures_zip", on_click="ignore",
+        )
+        st.download_button(
+            "Download vina_results.zip (everything)", prepared["bundle"], file_name="vina_results.zip",
+            mime="application/zip", key="download_bundle", on_click="ignore", type="primary",
+        )
 
+
+def spec_files(spec, best: pd.DataFrame, poses: pd.DataFrame, control) -> dict:
+    table = poses if spec.kind == "strip" else best
+    return figure_files(spec.kind, table, spec.target, control)
+
+
+def spec_caption(spec) -> str:
+    if spec.kind == "heatmap":
+        return plots.heatmap_caption()
+    if spec.kind == "ranked":
+        return plots.ranked_bars_caption(spec.target)
+    return plots.pose_strip_caption(spec.target)
 
 main()
