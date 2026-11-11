@@ -211,8 +211,7 @@ def main() -> None:
             "Target, ligand and seed are read from names like "
             "`<target>__<ligand>[_seedN]_out.pdbqt` and `.log`. Correct any row, type names "
             "where the filename was not recognised, or untick **include**. "
-            "**Exactly what this table shows is what gets analysed.** The seed is read-only: "
-            "it comes from the log header when there is one, otherwise from the filename."
+            "The runs this produces, with the seed each one will use, are listed below it."
         )
         key = content_key(data["files"])
         edited = st.data_editor(
@@ -220,12 +219,11 @@ def main() -> None:
             key=f"editor_{key}",
             hide_index=True,
             width="stretch",
-            disabled=["file", "kind", "seed", "seed_source", "recognised"],
+            disabled=["file", "kind", "seed_in_name", "recognised"],
             column_order=[c for c in inputs.RECOGNITION_COLUMNS if c != "filename_seed"],
             column_config={
                 "include": st.column_config.CheckboxColumn("include"),
-                "seed": st.column_config.TextColumn("seed used"),
-                "seed_source": st.column_config.TextColumn("seed from"),
+                "seed_in_name": st.column_config.TextColumn("seed in filename"),
             },
         )
         names, problems = inputs.names_from_table(edited)
@@ -233,6 +231,8 @@ def main() -> None:
             problems = ["No file is included."]
         for problem in problems:
             st.warning(problem)
+        if not problems:
+            show_runs_preview(data, names)
 
     blocked = not data or bool(problems)
     if st.button("Run analysis", key="run_analysis", type="primary", disabled=blocked):
@@ -254,6 +254,18 @@ def main() -> None:
     texts = {name: decode_text(data["files"][name]) for name in names}
     results = parse(texts, names)
     show_results(results, data, analysed)
+
+
+def show_runs_preview(data: dict, names: dict) -> None:
+    """The runs as the analysis will see them: the same cached parse the results use."""
+    st.subheader("Runs that will be analysed")
+    st.caption(
+        "Exactly what gets analysed, recomputed from the table above after every edit. "
+        "The seed comes from the log header when there is one, otherwise from the filename."
+    )
+    texts = {name: decode_text(data["files"][name]) for name in names}
+    preview = inputs.runs_preview(parse(texts, names).runs)
+    st.dataframe(preview, hide_index=True, width="stretch")
 
 
 def show_results(results: ParsedResults, data: dict, analysed: dict) -> None:

@@ -16,11 +16,13 @@ from vina_analyser.inputs import (
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_UPLOAD_MB,
+    PREVIEW_COLUMNS,
     RECOGNITION_COLUMNS,
     InputRefused,
     example_files,
     names_from_table,
     read_uploads,
+    runs_preview,
     recognition_table,
 )
 from vina_analyser.parsers import load_folder, load_results
@@ -167,43 +169,82 @@ def test_recognition_table_columns_and_rows():
 def test_recognition_reads_target_ligand_and_seed_from_the_name():
     table = recognition_table({"1iep__imatinib_1iep_seed2_out.pdbqt": b"", "5x72__p59_5x72.log": b""})
     rows = table.set_index("file")
-    assert rows.loc["1iep__imatinib_1iep_seed2_out.pdbqt", ["kind", "target", "ligand", "seed", "seed_source"]].tolist() == [
-        "pdbqt", "1iep", "imatinib_1iep", "2", "filename",
+    assert rows.loc["1iep__imatinib_1iep_seed2_out.pdbqt", ["kind", "target", "ligand", "seed_in_name"]].tolist() == [
+        "pdbqt", "1iep", "imatinib_1iep", "2",
     ]
-    assert rows.loc["5x72__p59_5x72.log", "kind"] == "log"
-    # An empty log records no seed: shown as a dash, never as "None" or a guess.
-    assert rows.loc["5x72__p59_5x72.log", ["seed", "seed_source"]].tolist() == ["—", "not recorded"]
+    assert rows.loc["5x72__p59_5x72.log", ["kind", "seed_in_name"]].tolist() == ["log", "—"]
 
 
-def test_recognition_shows_the_seed_the_analysis_will_use():
-    # The log's seed wins in the parser, so the table must show it too, otherwise it
-    # contradicts the Summary table (blank here, 42 there).
-    rows = recognition_table(real_files()).set_index("file")
-    assert rows.loc["1iep__imatinib_1iep.log", ["seed", "seed_source"]].tolist() == ["42", "log header"]
-    assert rows.loc["1iep__imatinib_1iep_out.pdbqt", ["seed", "seed_source"]].tolist() == ["42", "matching log"]
-    assert rows.loc["1iep__imatinib_1iep_seed2.log", ["seed", "seed_source"]].tolist() == ["2", "log header"]
-    assert set(rows["seed_source"]) == {"log header", "matching log"}
+def test_recognition_table_shows_only_facts_about_each_file():
+    # The seed actually used depends on the edits (pairing, exclusions), so it lives in
+    # the runs preview, which is computed from them. The editor shows file facts only.
+    assert "seed" not in RECOGNITION_COLUMNS and "seed_source" not in RECOGNITION_COLUMNS
 
 
-def test_seed_column_never_prints_none():
+def test_seed_in_name_never_prints_none():
     table = recognition_table({**real_files(), "run7.pdbqt": b"", "1iep__x_out.pdbqt": b""})
-    assert not table["seed"].isin(["None", "nan", "<NA>", ""]).any()
-    assert table.set_index("file").loc["run7.pdbqt", "seed"] == "—"
+    assert not table["seed_in_name"].isin(["None", "nan", "<NA>", ""]).any()
+    assert table.set_index("file").loc["run7.pdbqt", "seed_in_name"] == "—"
 
 
-def test_shown_seed_matches_the_seed_after_parsing():
+def preview_for(table, files=None):
+    files = files or {name: data.decode() for name, data in real_files().items()}
+    names, problems = names_from_table(table)
+    assert problems == []
+    included = {name: files[name] for name in names}
+    return runs_preview(load_results(included, names=names).runs)
+
+
+def row_of(preview, file):
+    hit = preview[(preview["PDBQT file"] == file) | (preview["log file"] == file)]
+    assert len(hit) == 1, file
+    return hit.iloc[0]
+
+
+def test_preview_shows_the_seed_the_analysis_uses():
+    preview = preview_for(recognition_table(real_files()))
+    assert list(preview.columns) == PREVIEW_COLUMNS
+    assert len(preview) == 13
+    row = row_of(preview, "1iep__imatinib_1iep_out.pdbqt")
+    assert [row["seed used"], row["seed from"], row["log file"]] == ["42", "log header", "1iep__imatinib_1iep.log"]
+
+
+def test_preview_matches_the_parsed_runs_exactly():
     files = {name: data.decode() for name, data in real_files().items()}
-    table = recognition_table(files)
-    names, _ = names_from_table(table)
+    names, _ = names_from_table(recognition_table(real_files()))
     runs = load_results(files, names=names).runs
-    parsed = {
-        file: str(int(seed))
-        for _, run in runs.iterrows()
-        for file, seed in ((run["pdbqt_file"], run["seed"]), (run["log_file"], run["seed"]))
-        if file
-    }
-    shown = dict(zip(table["file"], table["seed"]))
-    assert shown == parsed
+    preview = runs_preview(runs)
+    assert preview["seed used"].tolist() == [str(int(s)) for s in runs["seed"]]
+    assert preview["target"].tolist() == runs["target"].tolist()
+
+
+def test_retyping_a_recognised_pdbqt_updates_its_seed():
+    # The stale-seed bug: the PDBQT no longer pairs with the log, so it no longer has
+    # the log's seed, and the log becomes a run of its own.
+    table = recognition_table(real_files())
+    table.loc[table["file"] == "1iep__imatinib_1iep_out.pdbqt", "ligand"] = "renamed"
+    preview = preview_for(table)
+    pdbqt = row_of(preview, "1iep__imatinib_1iep_out.pdbqt")
+    assert [pdbqt["ligand"], pdbqt["seed used"], pdbqt["seed from"], pdbqt["log file"]] == [
+        "renamed", "—", "not recorded", "—",
+    ]
+    log = row_of(preview, "1iep__imatinib_1iep.log")
+    assert [log["seed used"], log["PDBQT file"]] == ["42", "—"]
+
+
+def test_excluding_a_log_updates_its_pdbqt_seed():
+    table = recognition_table(real_files())
+    table.loc[table["file"] == "1iep__imatinib_1iep_seed2.log", "include"] = False
+    preview = preview_for(table)
+    row = row_of(preview, "1iep__imatinib_1iep_seed2_out.pdbqt")
+    assert [row["seed used"], row["seed from"], row["log file"]] == ["2", "filename", "—"]
+
+
+def test_preview_never_prints_none():
+    table = recognition_table(real_files())
+    table.loc[table["file"] == "1iep__imatinib_1iep.log", "include"] = False
+    preview = preview_for(table)
+    assert not preview.isin(["None", "nan", "<NA>", ""]).any().any()
 
 
 def test_unrecognised_name_is_left_blank_not_guessed():

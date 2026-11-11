@@ -648,15 +648,6 @@ def test_source_parses_with_python_3_11_grammar(path):
     ast.parse(path.read_text(encoding="utf-8"), feature_version=(3, 11))
 
 
-def test_read_log_seed_matches_the_full_parser():
-    from vina_analyser.parsers import read_log_seed
-
-    for path in sorted((DATA / "logs").iterdir()):
-        text = path.read_text(encoding="utf-8")
-        assert read_log_seed(text) == parse_log(text).seed
-    assert read_log_seed("no header here") is None
-
-
 # ---------------------------------------------------- where the seed came from
 
 

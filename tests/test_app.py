@@ -253,13 +253,25 @@ def test_ligand_efficiency_is_shown_with_four_decimals(analysed):
     assert config[LABELS["ligand_efficiency"]]["type_config"]["format"] == "%.4f"
 
 
-def test_recognition_table_shows_the_log_seed():
+def test_runs_preview_shows_the_log_seed_before_analysis():
     at = fresh()
     button(at, "load_example").click().run()
-    table = next(frame for frame in frames(at) if "recognised" in frame.columns).set_index("file")
-    assert table.loc["1iep__imatinib_1iep.log", "seed"] == "42"
-    assert table.loc["1iep__imatinib_1iep.log", "seed_source"] == "log header"
-    assert "None" not in set(table["seed"])
+    editor = next(frame for frame in frames(at) if "recognised" in frame.columns).set_index("file")
+    assert "seed" not in editor.columns  # the seed used depends on edits: see the preview
+    assert editor.loc["1iep__imatinib_1iep_seed2.log", "seed_in_name"] == "2"
+    preview = next(frame for frame in frames(at) if "seed used" in frame.columns)
+    row = preview[preview["PDBQT file"] == "1iep__imatinib_1iep_out.pdbqt"].iloc[0]
+    assert [row["seed used"], row["seed from"]] == ["42", "log header"]
+    assert "Runs that will be analysed" in all_text(at)
+
+
+def test_runs_preview_matches_the_runs_analysed(analysed):
+    preview = next(frame for frame in frames(analysed) if "seed used" in frame.columns)
+    runs = next(frame for frame in frames(analysed) if "Modes in log" in frame.columns)
+    key = ["target", "ligand", "PDBQT file"]
+    shown = preview.sort_values(key)["seed used"].tolist()
+    analysed_seeds = runs.sort_values(key)["seed"]
+    assert shown == [str(int(seed)) for seed in analysed_seeds]
 
 
 # --------------------------------------------------------------------- export
@@ -324,3 +336,4 @@ def test_prepared_bundle_is_dropped_when_the_control_changes():
     button(at, "prepare_bundle").click().run()
     at.selectbox(key="control").set_value("imatinib_1iep").run()
     assert "download_bundle" not in downloads(at)
+

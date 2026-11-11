@@ -322,16 +322,6 @@ def _search(pattern: str, text: str) -> re.Match | None:
 _SEED = r"random seed:\s*(-?\d+)"
 
 
-def read_log_seed(text: str) -> int | None:
-    """Only the random seed from a Vina log: one search, no full parse.
-
-    parse_log() uses the same pattern, so the two can never disagree. The pattern is
-    not anchored to a line start, so a byte-order mark or CRLF endings don't affect it.
-    """
-    match = _search(_SEED, text)
-    return int(match.group(1)) if match else None
-
-
 def parse_log(text: str) -> LogData:
     """Read the header values and the mode table from Vina's stdout."""
     text = text.lstrip("﻿").replace("\r\n", "\n")

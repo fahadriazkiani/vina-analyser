@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 
 import pandas as pd
 
-from vina_analyser.parsers import Issue, decode_text, parse_filename, read_log_seed
+from vina_analyser.parsers import Issue, parse_filename
 
 ACCEPTED_SUFFIXES = (".pdbqt", ".log")
 
@@ -32,9 +32,12 @@ MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_TOTAL_BYTES = 200 * 1024 * 1024
 MAX_FILES = 2000
 
+# Facts about each file only. The seed actually used depends on the edits (which log a
+# PDBQT pairs with, which files are included), so it is shown in runs_preview instead.
 RECOGNITION_COLUMNS = [
-    "include", "file", "kind", "target", "ligand", "seed", "seed_source", "recognised", "filename_seed",
+    "include", "file", "kind", "target", "ligand", "seed_in_name", "recognised", "filename_seed",
 ]
+PREVIEW_COLUMNS = ["target", "ligand", "seed used", "seed from", "PDBQT file", "log file"]
 NOT_RECOGNISED = "no: type target and ligand"
 NO_SEED = "—"
 
@@ -162,57 +165,58 @@ def example_files(data_dir: str | Path) -> dict[str, bytes]:
 
 
 def recognition_table(files) -> pd.DataFrame:
-    """One row per file: what it will be analysed as, with blanks where nothing is known.
+    """One row per file: what its name says, with blanks where nothing is known.
 
-    `files` is {filename: bytes or text}. The seed shown is the one the analysis will
-    use: the log header's seed wins over the filename, as in the parser. Only the seed
-    line of each log is read here, not the whole file. `filename_seed` stays in the
-    table because the parser pairs a PDBQT with its log by filename seed.
+    `files` is {filename: bytes or text}; only the names are read. `filename_seed` is
+    the seed as a number (the parser pairs a PDBQT with its log by it); `seed_in_name`
+    is the same as text, so a missing seed shows as a dash and never as "None".
     """
-    parsed = {name: parse_filename(name) for name in files}
-    log_seeds = {}
-    for name, content in files.items():
-        if name.lower().endswith(".log"):
-            text = decode_text(content) if isinstance(content, bytes) else content
-            log_seeds[name] = read_log_seed(text)
-    # A PDBQT shows the seed of the log it will be paired with, if there is one.
-    paired = {
-        (p.target, p.ligand, p.seed): log_seeds[name]
-        for name, p in parsed.items()
-        if p is not None and p.kind == "log" and log_seeds.get(name) is not None
-    }
-
     rows = []
     for name in sorted(files):
-        name_parse = parsed[name]
-        is_log = name.lower().endswith(".log")
+        name_parse = parse_filename(name)
         filename_seed = name_parse.seed if name_parse else None
-        if is_log and log_seeds.get(name) is not None:
-            seed, source = log_seeds[name], "log header"
-        elif not is_log and name_parse and (name_parse.target, name_parse.ligand, filename_seed) in paired:
-            seed, source = paired[(name_parse.target, name_parse.ligand, filename_seed)], "matching log"
-        elif filename_seed is not None:
-            seed, source = filename_seed, "filename"
-        else:
-            seed, source = None, "not recorded"
         rows.append(
             {
                 "include": True,
                 "file": name,
-                "kind": "log" if is_log else "pdbqt",
+                "kind": "log" if name.lower().endswith(".log") else "pdbqt",
                 "target": name_parse.target if name_parse else "",
                 "ligand": name_parse.ligand if name_parse else "",
-                # Text, so a missing seed shows as a dash and never as "None".
-                "seed": NO_SEED if seed is None else str(seed),
-                "seed_source": source,
+                "seed_in_name": NO_SEED if filename_seed is None else str(filename_seed),
                 "recognised": "yes" if name_parse else NOT_RECOGNISED,
                 "filename_seed": filename_seed,
             }
         )
     table = pd.DataFrame(rows, columns=RECOGNITION_COLUMNS)
     return table.astype(
-        {"include": "bool", "target": "str", "ligand": "str", "seed": "str", "filename_seed": "Int64"}
+        {"include": "bool", "target": "str", "ligand": "str", "seed_in_name": "str", "filename_seed": "Int64"}
     )
+
+
+_SEED_FROM = {"log": "log header", "filename": "filename"}
+
+
+def runs_preview(runs: pd.DataFrame) -> pd.DataFrame:
+    """The runs exactly as parsed, for showing before Run is pressed.
+
+    Built from load_results(...).runs for the current table, so the seed shown is the
+    seed analysed, whatever was retyped or excluded.
+    """
+    def text(value) -> str:
+        return NO_SEED if value is None or (not isinstance(value, str) and pd.isna(value)) else str(value)
+
+    rows = [
+        {
+            "target": run["target"],
+            "ligand": run["ligand"],
+            "seed used": NO_SEED if pd.isna(run["seed"]) else str(int(run["seed"])),
+            "seed from": _SEED_FROM.get(run.get("seed_source"), "not recorded"),
+            "PDBQT file": text(run["pdbqt_file"]),
+            "log file": text(run["log_file"]),
+        }
+        for _, run in runs.iterrows()
+    ]
+    return pd.DataFrame(rows, columns=PREVIEW_COLUMNS)
 
 
 def names_from_table(table: pd.DataFrame) -> tuple[dict[str, dict], list[str]]:
