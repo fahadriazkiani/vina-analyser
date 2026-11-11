@@ -4,6 +4,8 @@ title: "Vina Docking Results Analyser"
 abstract: "Reproducible tables, figures and a methods paragraph from AutoDock Vina output files."
 type: software
 version: 0.1.0
+# Concept DOI: all versions; resolves to the latest release (v0.1.0: 10.5281/zenodo.24146186).
+doi: 10.5281/zenodo.24146185
 authors:
   - family-names: Riaz
     given-names: Fahad

@@ -59,3 +59,23 @@ def test_citation_file_names_the_licence_and_repository():
     assert re.search(r"^license: MIT$", CITATION, re.MULTILINE)
     assert "repository-code: \"https://github.com/fahadriazkiani/vina-analyser\"" in CITATION
     assert re.search(r"^cff-version: 1\.2\.0$", CITATION, re.MULTILINE)
+
+
+CONCEPT_DOI = "10.5281/zenodo.24146185"  # all versions; resolves to the latest release
+VERSION_DOI = "10.5281/zenodo.24146186"  # v0.1.0
+
+
+def test_readme_shows_the_doi_and_ci_badges_at_the_top():
+    top = README.split("\n## ", 1)[0]
+    assert f"[![DOI](https://zenodo.org/badge/1443434015.svg)](https://doi.org/{CONCEPT_DOI})" in top
+    assert "actions/workflows/tests.yml/badge.svg" in top
+
+
+def test_readme_cites_the_tool_with_the_concept_doi_and_the_release_doi():
+    section = README.split("## Citing this tool\n", 1)[1].split("\n## ", 1)[0]
+    assert CONCEPT_DOI in section and "latest release" in section
+    assert VERSION_DOI in section and "v0.1.0" in section
+
+
+def test_citation_file_carries_the_concept_doi():
+    assert re.search(rf"^doi: \"?{re.escape(CONCEPT_DOI)}\"?$", CITATION, re.MULTILINE)

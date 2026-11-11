@@ -1,5 +1,8 @@
 # Vina Docking Results Analyser
 
+[![tests](https://github.com/fahadriazkiani/vina-analyser/actions/workflows/tests.yml/badge.svg)](https://github.com/fahadriazkiani/vina-analyser/actions/workflows/tests.yml)
+[![DOI](https://zenodo.org/badge/1443434015.svg)](https://doi.org/10.5281/zenodo.24146185)
+
 Turns AutoDock Vina output files into tables, figures and a methods paragraph you can
 check, cite and reproduce. Upload the output PDBQT files and logs from your docking runs.
 The app ranks ligands within each target, compares them against a control, summarises
@@ -147,7 +150,17 @@ If you use results from this tool, cite AutoDock Vina:
   new scoring function, efficient optimization and multithreading. *J. Comput. Chem.*
   2010. [doi:10.1002/jcc.21334](https://doi.org/10.1002/jcc.21334)
 
-To cite this analyser, use the version and commit in your `methods.txt`. GitHub's
+## Citing this tool
+
+Cite the analyser with its Zenodo DOI as well as AutoDock Vina:
+
+> Riaz F. Vina Docking Results Analyser. Zenodo.
+> [doi:10.5281/zenodo.24146185](https://doi.org/10.5281/zenodo.24146185)
+
+This is the concept DOI. It covers all versions and always resolves to the
+latest release. To cite exactly the release you used, use that release's version DOI
+instead: for v0.1.0 it is [10.5281/zenodo.24146186](https://doi.org/10.5281/zenodo.24146186).
+Your `methods.txt` names the version and git commit the results came from. GitHub's
 **Cite this repository** button uses [CITATION.cff](CITATION.cff).
 
 ## Testing
