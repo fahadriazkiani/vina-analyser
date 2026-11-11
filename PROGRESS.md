@@ -124,9 +124,7 @@ Version 0.1.0. Stays below 1.0.0 until the author has used it on their own data.
 - Text typed into the table (file, target, ligand names) appears in warnings rendered
   as Markdown. Streamlit does not render HTML, and only the person who uploaded the
   files sees it, so this is accepted.
-- The README has no screenshot yet: Chrome screenshots timed out during Phase 6.
 - CI has not run yet: it runs on the first push. Python 3.11 is verified only then.
-- README "How this was built" is a draft for the author to rewrite.
 
 ## Phase 4 manual checks (not covered by automated tests)
 Run with `streamlit run app.py`, then:
@@ -191,15 +189,14 @@ refactors.
    (—, not recorded) and the log becomes a run of its own.
 3. Read the privacy statement under "1. Files" as someone with unpublished data.
 4. Summary tab: scores show three decimals (−10.996, not −11).
-5. Read README.md top to bottom, and rewrite "How this was built".
+5. Read README.md top to bottom.
 
 ## Next steps (the author's, not code)
 1. Push, and check the CI run is green on all four jobs (Actions tab).
-2. Add a screenshot to the README (docs/screenshot.png).
-3. Make the repository public; connect Zenodo; push the tag `v0.1.0` and make a
+2. Make the repository public; connect Zenodo; push the tag `v0.1.0` and make a
    GitHub release from it (Zenodo mints the DOI).
-4. Deploy on Streamlit Community Cloud with Python 3.12 (README, "Deploying").
-5. Use it on your own data; then decide on 1.0.0.
+3. Deploy on Streamlit Community Cloud with Python 3.12 (README, "Deploying").
+4. Use it on your own data; then decide on 1.0.0.
 
 ## How to resume in a new session
 Paste this into Claude Code:

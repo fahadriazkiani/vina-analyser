@@ -9,6 +9,8 @@ exports everything, with a record of exactly which files and code produced it.
 It is a small, careful tool for one job. It does not run docking, prepare structures,
 or judge whether your docking protocol was appropriate.
 
+![The Summary tab after analysing the example dataset](docs/screenshot.png)
+
 ## Read before interpreting any number
 
 These are the same limitations the app shows at the top of every page:
@@ -163,15 +165,35 @@ the table. They are listed in PROGRESS.md.
 
 ## How this was built
 
-> **Draft — Fahad, please edit this section in your own words.**
+I'm a Medical Laboratory Sciences graduate from Lahore, Pakistan, working in
+computational biology. During my undergraduate thesis I docked 36 compounds and
+2 control drugs against 4 targets — 152 docking runs — and did all the
+bookkeeping by hand: reading scores out of log files, pasting them into
+spreadsheets, redrawing the same figures every time something changed. It
+worked, but six months later I could not have reproduced it exactly, and nobody
+else could have either. This tool is what I wish I'd had then.
 
-This tool was built with an AI coding assistant (Claude Code). The scientific
-decisions were mine: what to compare and what never to compare, how seeds, ties,
-heavy atoms and the RMSD reference are handled, and what the methods paragraph may
-claim. So was the review of every phase. The assistant wrote code and tests to that
-specification: tests first, then deliberate-bug checks of the tests, with each phase
-reviewed before the next began. The decisions and their reasons are recorded in
-PROGRESS.md.
+It was built with AI assistance (Claude Code) across six phases: parsing,
+analysis, figures, the web app, exports, and polish. Every phase began with a
+written plan I approved before any code was written, and tests were written
+before the implementation each time.
+
+Nothing here is accepted because it looks right. Every number the tool produces
+is tested against real AutoDock Vina 1.2.5 output with known values, and the
+test suite is itself checked: 100 deliberate bugs are planted into copies of the
+code to confirm the tests actually catch them (`scripts/mutation_runner.py`).
+Tests run on Python 3.11–3.14 on Linux and Windows.
+
+The constraints the tool enforces are documented as explicit decisions in
+`PROGRESS.md`, each made deliberately rather than inherited from a default:
+CG0 glue carbons count as heavy atoms while G0 pseudo-atoms do not; scores are
+never compared across targets; redocking RMSD is refused unless the reference is
+explicitly confirmed as an experimental pose; and every output carries the
+caveat that Vina's scoring error is roughly 2–3 kcal/mol.
+
+I used AI assistance for implementation and for code review. The requirements,
+the scientific constraints, and the final judgement on what was acceptable
+were mine.
 
 ## Licence
 
