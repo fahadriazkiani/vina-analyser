@@ -121,6 +121,42 @@ Run with `streamlit run app.py`, then:
 4. `Get-FileHash vina_test_data\logs\1iep__p59_5x72.log` equals the SHA-256 in
    run_metadata.json (lower-case it first).
 
+## Deliberate-bug (mutation) runner
+`scripts/mutation_runner.py` plants one bug at a time in a throwaway copy of the repo
+(in a temp folder, `.git` included), runs the full suite against each, and reports a
+verdict per bug. The bugs live beside it in `scripts/mutation_sets.py`, grouped by the
+file they change.
+
+- **CAUGHT**: some tests fail, and they are a specific subset.
+- **MISSED**: everything still passes, so no test guards that behaviour. Add a test.
+- **INVALID**: the result says nothing about the behaviour, because the mutant has a
+  syntax error, stops the package importing, breaks test collection, crashes the app
+  on its start screen (app.py only), or fails more than 30% of all tests.
+- **NOT APPLIED**: the text to replace isn't in the code exactly once any more.
+  Re-target the entry to where that behaviour lives now; keep its meaning.
+
+The unmodified copy must pass first, or nothing runs. The suite runs in full for each
+mutant (no `-x`), so the share of failing tests is always known. The "guard" phase holds
+mutants that must come out INVALID; if one is CAUGHT, the guard itself is broken.
+
+Run from the repository root:
+
+```
+python scripts/mutation_runner.py --check                 # seconds: does every entry still apply?
+python scripts/mutation_runner.py                         # everything, ~35-40 min on 3 workers
+python scripts/mutation_runner.py --phase phase5          # one phase (repeatable)
+python scripts/mutation_runner.py --module vina_analyser/report.py
+```
+
+It exits non-zero if any real mutant is not CAUGHT or any guard mutant is not INVALID.
+
+**The mutations are a chosen subset per module, by design.** Each one breaks a
+behaviour we decided matters (see "Decisions made"), such as comparing within one target,
+refusing an SDF reference, or a deterministic ZIP. It is not an exhaustive mutation of
+every line, so a clean run means "these decisions are guarded", not "the code is fully
+tested". When a phase adds a decision, add a mutation for it. Run `--check` after
+refactors.
+
 ## Next step: Phase 6 (polish)
 Ask for the plan first. README (purpose, screenshot, install/run, input format,
 limitations, how to cite Vina), LICENSE (MIT), deployment notes for Streamlit Community
