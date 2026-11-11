@@ -68,6 +68,8 @@ RUN_COLUMNS = {
     "grid_spacing": "float64",
     "exhaustiveness": "Int64",
     "cpu": "Int64",
+    # "log", "filename" or blank: reports must not present a filename seed as logged.
+    "seed_source": "object",
 }
 
 
@@ -521,8 +523,10 @@ def _build_run(
         )
 
     seed = name_seed
+    seed_source = "filename" if name_seed is not None else None
     if log and log.seed is not None:
         seed = log.seed
+        seed_source = "log"
         if name_seed is not None and name_seed != log.seed:
             issues.append(
                 Issue(
@@ -582,6 +586,7 @@ def _build_run(
         "n_modes_log": len(log.modes) if log else None,
         "max_log_pdbqt_diff": largest_diff,
         **_header_values(log),
+        "seed_source": seed_source,
     }
     coordinates = {
         (target, ligand, seed, pose.pose): pose.atoms

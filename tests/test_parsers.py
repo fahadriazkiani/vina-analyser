@@ -655,3 +655,31 @@ def test_read_log_seed_matches_the_full_parser():
         text = path.read_text(encoding="utf-8")
         assert read_log_seed(text) == parse_log(text).seed
     assert read_log_seed("no header here") is None
+
+
+# ---------------------------------------------------- where the seed came from
+
+
+def test_runs_record_where_the_seed_came_from():
+    runs = load_folder(DATA / "results", DATA / "logs").runs
+    assert set(runs["seed_source"]) == {"log"}
+
+
+def test_seed_from_the_filename_is_marked_as_such():
+    # Log with its seed line removed: the parser falls back to the filename seed,
+    # and the run row must say so, so nothing downstream reports it as logged.
+    log = (DATA / "logs" / "1iep__imatinib_1iep_seed2.log").read_text(encoding="utf-8")
+    log = "\n".join(line for line in log.splitlines() if "random seed" not in line)
+    pdbqt = (DATA / "results" / "1iep__imatinib_1iep_seed2_out.pdbqt").read_text(encoding="utf-8")
+    runs = load_results(
+        {"1iep__imatinib_1iep_seed2.log": log, "1iep__imatinib_1iep_seed2_out.pdbqt": pdbqt}
+    ).runs
+    assert runs["seed"].tolist() == [2]
+    assert runs["seed_source"].tolist() == ["filename"]
+
+
+def test_missing_seed_has_no_source():
+    pdbqt = (DATA / "results" / "1iep__p59_5x72_out.pdbqt").read_text(encoding="utf-8")
+    runs = load_results({"1iep__p59_5x72_out.pdbqt": pdbqt}).runs
+    assert runs["seed"].isna().all()
+    assert runs["seed_source"].isna().all()
