@@ -30,12 +30,12 @@ def main(out_dir=ROOT / "figures"):
     written, captions = [], []
 
     written += save_figure(affinity_heatmap(best), out_dir / "heatmap_best_affinity")
-    captions.append(("heatmap_best_affinity", heatmap_caption()))
+    captions.append(("heatmap_best_affinity", heatmap_caption(best["ligand"].nunique())))
 
     # The common real-world case: many ligands docked into a single target.
     one_target = best[best["target"] == "1iep"]
     written += save_figure(affinity_heatmap(one_target), out_dir / "heatmap_one_target_1iep")
-    captions.append(("heatmap_one_target_1iep", heatmap_caption()))
+    captions.append(("heatmap_one_target_1iep", heatmap_caption(one_target["ligand"].nunique())))
 
     for target in sorted(best["target"].unique()):
         written += save_figure(

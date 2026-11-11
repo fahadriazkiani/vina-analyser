@@ -29,6 +29,16 @@ from vina_analyser.analysis import NOTES  # noqa: E402
 matplotlib.rcParams["svg.hashsalt"] = "vina-analyser"
 
 FIGURE_WIDTH_CM = 8.5  # journal single column
+# Above this many ligands a heatmap cell is too narrow to print its score legibly.
+MAX_ANNOTATED_LIGANDS = 16
+# Width each ligand needs along the x axis. 45-degree labels at 7 pt clear each other
+# from about 0.42 cm apart; a heatmap cell holding a score needs about 0.85 cm.
+LABEL_SPACING_CM = 0.45
+ANNOTATED_CELL_CM = 0.85
+# Room for the y-axis labels and margins, beside the per-ligand width.
+SIDE_MARGIN_CM = 2.5
+# Vertical room a 45-degree tick label takes, per character, at 7 pt.
+ROTATED_LABEL_CM_PER_CHAR = 0.1
 CM_PER_INCH = 2.54
 MIN_POSES_FOR_BOX = 5
 LABEL_LIMIT = 14
@@ -107,10 +117,15 @@ def _settle_layout(figure) -> None:
     figure.set_layout_engine("none")
 
 
-def _new_figure(height_cm: float):
-    """A single-column figure with small fonts and no overlapping labels."""
-    size = (FIGURE_WIDTH_CM / CM_PER_INCH, height_cm / CM_PER_INCH)
+def _new_figure(height_cm: float, width_cm: float = FIGURE_WIDTH_CM):
+    """A single-column figure (wider only when needed) with no overlapping labels."""
+    size = (width_cm / CM_PER_INCH, height_cm / CM_PER_INCH)
     return plt.subplots(figsize=size, layout="constrained")
+
+
+def _width_for(n_columns: int, per_column_cm: float) -> float:
+    """The journal column width, or wider when the columns would not fit in it."""
+    return max(FIGURE_WIDTH_CM, n_columns * per_column_cm + SIDE_MARGIN_CM)
 
 
 def short_labels(names, limit: int = LABEL_LIMIT) -> list[str]:
@@ -174,8 +189,14 @@ def affinity_heatmap(best: pd.DataFrame):
             .reindex(index=grid.index, columns=grid.columns)
         )
 
-    height = 3.4 + 0.7 * len(grid.index)
-    figure, axes = _new_figure(height)
+    # Past MAX_ANNOTATED_LIGANDS a score no longer fits in its cell, so the numbers are
+    # left out (the caption says so) rather than printed over each other.
+    annotate = len(grid.columns) <= MAX_ANNOTATED_LIGANDS
+    labels = short_labels(grid.columns)
+    longest = max(len(label) for label in labels)
+    height = 2.0 + 0.7 * len(grid.index) + ROTATED_LABEL_CM_PER_CHAR * longest
+    width = _width_for(len(grid.columns), ANNOTATED_CELL_CM if annotate else LABEL_SPACING_CM)
+    figure, axes = _new_figure(height, width)
     # A pair that was never docked shows as a blank cell, never as a zero.
     colours = plt.get_cmap(HEATMAP_CMAP).with_extremes(bad=MISSING_COLOUR)
     image = axes.imshow(values, cmap=colours, aspect="auto")
@@ -188,13 +209,13 @@ def affinity_heatmap(best: pd.DataFrame):
     if low == high:  # one score, or several identical ones: give the colour scale a width
         image.set_clim(low - 0.5, high + 0.5)
 
-    axes.set_xticks(range(len(grid.columns)), short_labels(grid.columns), rotation=45, ha="right")
+    axes.set_xticks(range(len(grid.columns)), labels, rotation=45, ha="right")
     axes.set_yticks(range(len(grid.index)), list(grid.index))
     for spine in axes.spines.values():
         spine.set_visible(False)
     axes.tick_params(length=0)
 
-    for row in range(values.shape[0]):
+    for row in range(values.shape[0] if annotate else 0):
         for column in range(values.shape[1]):
             if values.mask.ndim and values.mask[row, column]:
                 continue
@@ -203,7 +224,7 @@ def affinity_heatmap(best: pd.DataFrame):
             if runs is not None:
                 count = runs.iat[row, column]
                 if pd.notna(count) and int(count) > 1:
-                    label += f" (n={int(count)})"
+                    label += f"\n(n={int(count)})"  # own line: beside it, it crowded the cell
             axes.text(
                 column,
                 row,
@@ -211,6 +232,7 @@ def affinity_heatmap(best: pd.DataFrame):
                 ha="center",
                 va="center",
                 fontsize=6,
+                linespacing=1.0,
                 color=_readable_on(image.cmap(image.norm(value))),
             )
 
@@ -218,7 +240,7 @@ def affinity_heatmap(best: pd.DataFrame):
     bar = figure.colorbar(image, ax=axes, orientation="horizontal", fraction=0.12, pad=0.06)
     bar.set_label(COLOURBAR_LABEL, fontsize=6)
     bar.ax.tick_params(labelsize=6)
-    figure.set_label(heatmap_caption())
+    figure.set_label(heatmap_caption(len(grid.columns)))
     return figure
 
 
@@ -240,14 +262,21 @@ def _readable_on(rgba) -> str:
     return "white" if luminance < 0.5 else "black"
 
 
-def heatmap_caption() -> str:
+def heatmap_caption(n_ligands: int | None = None) -> str:
     return (
         "Best Vina score for each target and ligand, in kcal/mol, on one shared colour "
         "scale. Compare ligands within a single row (one target) only: different "
         "targets use different receptors and grid boxes, so their scores are not "
         "comparable. A cell marked (n=…) shows the best score across that many repeat "
         "runs with different seeds, so it had more sampling than an unmarked cell, "
-        "which comes from a single run. Blank cells were not docked. " + NOTES["scoring_error"]
+        "which comes from a single run. Blank cells were not docked. "
+        + (
+            "There are too many ligands to print each score in its cell; the scores are "
+            "in the best-pose table. "
+            if n_ligands is not None and n_ligands > MAX_ANNOTATED_LIGANDS
+            else ""
+        )
+        + NOTES["scoring_error"]
     )
 
 
@@ -329,7 +358,7 @@ def pose_strip(poses: pd.DataFrame, target: str):
     index_of = {ligand: position for position, ligand in enumerate(ligands)}
 
     height = 6.4
-    figure, axes = _new_figure(height)
+    figure, axes = _new_figure(height, _width_for(len(ligands), LABEL_SPACING_CM))
     generator = np.random.default_rng(JITTER_SEED)  # reseeded per call, so reproducible
 
     filled_x, filled_y, hollow_x, hollow_y = [], [], [], []

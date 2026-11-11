@@ -21,6 +21,7 @@ from vina_analyser.plots import (
     COLOURBAR_LABEL,
     CONTROL_COLOUR,
     FIGURE_WIDTH_CM,
+    MAX_ANNOTATED_LIGANDS,
     MIN_POSES_FOR_BOX,
     affinity_heatmap,
     heatmap_caption,
@@ -133,7 +134,7 @@ def test_heatmap_annotates_every_known_value(best):
     figure = affinity_heatmap(best)
     axes = figure.axes[0]
     annotations = {text.get_text() for text in axes.texts}
-    assert "−13.27 (n=4)" in annotations  # four seeds, see the run-count test
+    assert "−13.27\n(n=4)" in annotations  # four seeds, see the run-count test
     assert "−6.37" in annotations  # bace1 on 1iep, rounded from -6.367
     assert "−11.00" in annotations  # p59 on 5x72, the PDBQT's -10.996
     assert len(axes.texts) == 10
@@ -179,7 +180,7 @@ def test_heatmap_marks_cells_drawn_from_more_than_one_run(best):
     figure = affinity_heatmap(best)
     texts = [text.get_text() for text in figure.axes[0].texts]
     # Imatinib on 1iep is the best of four seeds; every other cell is a single run.
-    assert "−13.27 (n=4)" in texts
+    assert "−13.27\n(n=4)" in texts
     assert "−10.83" in texts  # imatinib on 5x72: one run, so no mark
     assert len([text for text in texts if "n=" in text]) == 1
 
@@ -192,7 +193,7 @@ def test_single_run_cells_carry_no_mark():
     )
     texts = [text.get_text() for text in affinity_heatmap(poses_to_best(poses)).axes[0].texts]
     assert "−8.00" in texts
-    assert "−9.50 (n=2)" in texts
+    assert "−9.50\n(n=2)" in texts
 
 
 def test_heatmap_works_without_a_run_count_column(best):
@@ -527,7 +528,7 @@ def test_single_target_heatmap_annotates_every_ligand(best):
     subset = best[best["target"] == "1iep"]
     figure = affinity_heatmap(subset)
     texts = {text.get_text() for text in figure.axes[0].texts}
-    assert "−13.27 (n=4)" in texts
+    assert "−13.27\n(n=4)" in texts
     assert "−8.46" in texts
     assert len(figure.axes[0].texts) == 5
 
@@ -569,3 +570,98 @@ def test_every_figure_type_saves_identically_every_time(real, best, kind):
     saves = [figure_bytes(figure, "png") for _ in range(3)] + [figure_bytes(figure, "svg") for _ in range(2)]
     assert saves[0] == saves[1] == saves[2]
     assert saves[3] == saves[4]
+
+
+# ------------------------------------------------------------- large grids
+
+
+def test_run_count_mark_sits_on_its_own_line_under_the_score(best):
+    texts = [text.get_text() for text in affinity_heatmap(best).axes[0].texts]
+    marked = [text for text in texts if "n=" in text]
+    assert marked == ["−13.27\n(n=4)"]
+
+
+def many_ligands_best(n_ligands, n_targets=4):
+    # Long names that only differ near the end, so truncation has to widen.
+    rows = []
+    for t in range(n_targets):
+        for i in range(n_ligands):
+            ligand = f"compound_series_A_{i:03d}_long_suffix"
+            rows.append({"target": f"target{t}", "ligand": ligand, "seed": 1, "affinity": -6.0 - (i % 9) * 0.37})
+            if i % 5 == 0:  # some cells are the best of two seeds, so they carry (n=2)
+                rows.append({"target": f"target{t}", "ligand": ligand, "seed": 2, "affinity": -6.1 - (i % 9) * 0.37})
+    return poses_to_best(poses_frame(*rows))
+
+
+def drawn(figure):
+    figure.canvas.draw()
+    return figure.canvas.get_renderer()
+
+
+def x_labels_do_not_touch(figure, axes):
+    """45-degree labels are parallel; they clear each other when the gap between their
+    baselines, measured across them, exceeds the text height."""
+    renderer = drawn(figure)
+    labels = [label for label in axes.get_xticklabels() if label.get_text()]
+    assert len({label.get_text() for label in labels}) == len(labels)  # all distinct
+    xs = sorted(axes.transData.transform((tick, 0))[0] for tick in axes.get_xticks())
+    gaps_points = [(b - a) * 72 / figure.dpi for a, b in zip(xs, xs[1:])]
+    height_points = labels[0].get_fontsize() * 1.2
+    assert min(gaps_points) * 0.7071 >= height_points, (min(gaps_points), height_points)
+    return renderer
+
+
+@pytest.mark.parametrize("n_ligands", [4, 12, MAX_ANNOTATED_LIGANDS, 30, 60])
+def test_heatmap_stays_legible_with_many_ligands(n_ligands):
+    best = many_ligands_best(n_ligands)
+    figure = affinity_heatmap(best)
+    axes = figure.axes[0]
+    renderer = x_labels_do_not_touch(figure, axes)
+    width_cm = figure.get_figwidth() * 2.54
+    assert width_cm >= FIGURE_WIDTH_CM - 1e-6
+    if n_ligands <= MAX_ANNOTATED_LIGANDS:
+        texts = axes.texts
+        assert len(texts) == n_ligands * 4
+        # Each number fits inside its own cell, so no two numbers can touch.
+        cell = abs(axes.transData.transform((1, 0))[0] - axes.transData.transform((0, 0))[0])
+        cell_height = abs(axes.transData.transform((0, 1))[1] - axes.transData.transform((0, 0))[1])
+        for text in texts:
+            box = text.get_window_extent(renderer)
+            assert box.width < cell and box.height < cell_height, text.get_text()
+    else:
+        assert len(axes.texts) == 0  # too small to print a number in each cell
+        assert "best-pose table" in heatmap_caption(n_ligands)
+
+
+def test_small_heatmaps_keep_the_journal_column_width(best):
+    assert affinity_heatmap(best).get_figwidth() * 2.54 == pytest.approx(FIGURE_WIDTH_CM)
+
+
+def test_caption_mentions_missing_numbers_only_when_they_are_missing():
+    assert "best-pose table" not in heatmap_caption()
+    assert "best-pose table" not in heatmap_caption(MAX_ANNOTATED_LIGANDS)
+    assert "best-pose table" in heatmap_caption(MAX_ANNOTATED_LIGANDS + 1)
+
+
+@pytest.mark.parametrize("n_ligands", [12, 30, 60])
+def test_pose_strip_stays_legible_with_many_ligands(n_ligands):
+    best = many_ligands_best(n_ligands, n_targets=1)
+    poses = poses_frame(*[
+        {"target": "target0", "ligand": ligand, "seed": 1, "pose": pose, "affinity": -7.0 + pose * 0.2}
+        for ligand in best["ligand"] for pose in (1, 2, 3)
+    ])
+    figure = pose_strip(poses, "target0")
+    x_labels_do_not_touch(figure, figure.axes[0])
+
+
+@pytest.mark.parametrize("n_ligands", [12, 60])
+def test_ranked_bars_stay_legible_with_many_ligands(n_ligands):
+    best = many_ligands_best(n_ligands, n_targets=1)
+    figure = ranked_bars(best, "target0")
+    axes = figure.axes[0]
+    drawn(figure)
+    labels = [label.get_text() for label in axes.get_yticklabels()]
+    assert len(set(labels)) == n_ligands
+    ys = sorted(axes.transData.transform((0, tick))[1] for tick in axes.get_yticks())
+    gap_points = min(b - a for a, b in zip(ys, ys[1:])) * 72 / figure.dpi
+    assert gap_points >= axes.get_yticklabels()[0].get_fontsize() * 1.2

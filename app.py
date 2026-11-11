@@ -326,7 +326,7 @@ def show_results(results: ParsedResults, data: dict, analysed: dict) -> None:
         if best.empty:
             st.info("No figures: no pose has coordinates.")
         else:
-            show_figure("heatmap", best, plots.heatmap_caption())
+            show_figure("heatmap", best, plots.heatmap_caption(best["ligand"].nunique()))
             target = st.selectbox("Target", targets, key="figure_target")
             show_figure("ranked", best, plots.ranked_bars_caption(target), target=target, control=control)
             show_figure("strip", results.poses, plots.pose_strip_caption(target), target=target)
@@ -552,7 +552,7 @@ def show_export(result, results: ParsedResults, redocking, targets, control, dat
         with st.spinner(f"Drawing {len(specs)} figures for the ZIP…"):
             for item in specs:
                 figures[item.stem] = spec_files(item, result.best, results.poses, control)
-                captions[item.stem] = spec_caption(item)
+                captions[item.stem] = spec_caption(item, result.best)
             figures_zip = report.figures_zip(figures, captions)
         with st.spinner("Building the results bundle (Excel, tables, figures, methods, metadata)…"):
             bundle = report.bundle_zip(
@@ -577,9 +577,9 @@ def spec_files(spec, best: pd.DataFrame, poses: pd.DataFrame, control) -> dict:
     return figure_files(spec.kind, table, spec.target, control)
 
 
-def spec_caption(spec) -> str:
+def spec_caption(spec, best: pd.DataFrame) -> str:
     if spec.kind == "heatmap":
-        return plots.heatmap_caption()
+        return plots.heatmap_caption(best["ligand"].nunique())
     if spec.kind == "ranked":
         return plots.ranked_bars_caption(spec.target)
     return plots.pose_strip_caption(spec.target)

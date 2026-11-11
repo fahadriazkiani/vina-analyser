@@ -359,8 +359,8 @@ MUTATIONS: dict[str, list[Mutation]] = {
              '"dirty": False'),
         ]),
         Mutation('phase5', 'Git failure crashes metadata', [
-            ('    except (OSError, subprocess.SubprocessError):\n        return None\n',
-             '    except ZeroDivisionError:\n        return None\n'),
+            ('    except (OSError, subprocess.SubprocessError):\n        full = None\n',
+             '    except ZeroDivisionError:\n        full = None\n'),
         ]),
         Mutation('phase5', "Metadata timestamp is 'now'", [
             ('analysed_at=analysed_at.isoformat(),',
