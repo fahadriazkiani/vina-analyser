@@ -30,7 +30,19 @@ CACHE_ENTRIES = 8
 FIGURE_CACHE_ENTRIES = 32
 FIGURE_WIDTH_PX = 640
 
+# Cached parses and figures hold users' data, so they expire; the privacy statement
+# next to the uploader promises this (a test checks every cache has a ttl).
+DATA_CACHE_SECONDS = 3600
 GIT_CACHE_SECONDS = 60
+
+PRIVACY_NOTE = (
+    "**Your files.** Uploaded files are processed in memory and never written to disk. "
+    "Nothing is kept after your session ends, except a temporary in-memory cache of "
+    "parsed results and figures that expires within an hour. If this app is running on "
+    "a public server, anyone with the link can use it, but other users cannot see your "
+    "files or results. For unpublished or confidential results, you can run it on your "
+    "own computer instead (see the README)."
+)
 
 
 def limitations_markdown() -> str:
@@ -57,12 +69,12 @@ RUN_COLUMNS = {
 # ---------------------------------------------------------------- cached work
 
 
-@st.cache_data(max_entries=CACHE_ENTRIES, show_spinner="Reading the docking files…")
+@st.cache_data(max_entries=CACHE_ENTRIES, ttl=DATA_CACHE_SECONDS, show_spinner="Reading the docking files…")
 def parse(files: dict[str, str], names: dict[str, dict]) -> ParsedResults:
     return load_results(files, names=names)
 
 
-@st.cache_data(max_entries=FIGURE_CACHE_ENTRIES, show_spinner="Drawing the figure…")
+@st.cache_data(max_entries=FIGURE_CACHE_ENTRIES, ttl=DATA_CACHE_SECONDS, show_spinner="Drawing the figure…")
 def figure_files(kind: str, table: pd.DataFrame, target: str | None, control: str | None) -> dict:
     """PNG and SVG bytes of one figure. The screen shows exactly the PNG offered for download."""
     if kind == "heatmap":
@@ -188,6 +200,7 @@ def main() -> None:
 
     # 1. Input --------------------------------------------------------------
     st.header("1. Files")
+    st.markdown(PRIVACY_NOTE)
     handle_uploads()
     if st.button("Load example dataset", key="load_example", help="26 real AutoDock Vina 1.2.5 files from vina_test_data/"):
         set_input("example", inputs.example_files(EXAMPLE_DIR), [])

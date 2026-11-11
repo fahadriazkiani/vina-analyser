@@ -337,3 +337,41 @@ def test_prepared_bundle_is_dropped_when_the_control_changes():
     at.selectbox(key="control").set_value("imatinib_1iep").run()
     assert "download_bundle" not in downloads(at)
 
+
+# -------------------------------------------------------------------- privacy
+
+
+def test_privacy_statement_is_shown_with_the_uploader():
+    at = fresh()  # the start screen, before anything is uploaded
+    statement = next(m.value for m in at.markdown if "Your files" in m.value)
+    assert "processed in memory" in statement
+    assert "never written to disk" in statement
+    assert "expire" in statement and "hour" in statement
+    assert "anyone with the link" in statement
+    assert "own computer" in statement
+
+
+def test_privacy_statement_comes_right_after_the_upload_header():
+    # Where someone decides whether to upload: in section 1, not further down.
+    at = fresh()
+    order = [e.value for e in at.main if getattr(e, "type", "") in ("markdown", "header")]
+    header = next(i for i, v in enumerate(order) if str(v).startswith("1."))
+    statement = next(i for i, v in enumerate(order) if "Your files" in str(v))
+    assert statement == header + 1
+
+
+def test_every_cache_of_user_data_expires():
+    # The privacy statement promises cached results expire; check every cache says so.
+    import ast
+
+    tree = ast.parse(Path(APP).read_text(encoding="utf-8"))
+    caches = [
+        (node.name, decorator)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        for decorator in node.decorator_list
+        if isinstance(decorator, ast.Call) and ast.unparse(decorator.func) == "st.cache_data"
+    ]
+    assert len(caches) >= 3
+    for name, decorator in caches:
+        assert "ttl" in {keyword.arg for keyword in decorator.keywords}, name
