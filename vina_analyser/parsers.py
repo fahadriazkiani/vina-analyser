@@ -317,6 +317,19 @@ def _search(pattern: str, text: str) -> re.Match | None:
     return re.search(pattern, text, flags=re.MULTILINE)
 
 
+_SEED = r"random seed:\s*(-?\d+)"
+
+
+def read_log_seed(text: str) -> int | None:
+    """Only the random seed from a Vina log: one search, no full parse.
+
+    parse_log() uses the same pattern, so the two can never disagree. The pattern is
+    not anchored to a line start, so a byte-order mark or CRLF endings don't affect it.
+    """
+    match = _search(_SEED, text)
+    return int(match.group(1)) if match else None
+
+
 def parse_log(text: str) -> LogData:
     """Read the header values and the mode table from Vina's stdout."""
     text = text.lstrip("﻿").replace("\r\n", "\n")
@@ -340,7 +353,7 @@ def parse_log(text: str) -> LogData:
     spacing = group(rf"^Grid space\s*:\s*{_NUMBER}")
     exhaustiveness = group(r"^Exhaustiveness\s*:\s*(\d+)")
     cpu = group(r"^CPU\s*:\s*(\d+)")
-    seed = group(r"random seed:\s*(-?\d+)")
+    seed = group(_SEED)
     data.grid_spacing = float(spacing) if spacing else None
     data.exhaustiveness = int(exhaustiveness) if exhaustiveness else None
     data.cpu = int(cpu) if cpu else None

@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 
 import pandas as pd
 
-from vina_analyser.parsers import Issue, parse_filename
+from vina_analyser.parsers import Issue, decode_text, parse_filename, read_log_seed
 
 ACCEPTED_SUFFIXES = (".pdbqt", ".log")
 
@@ -32,8 +32,11 @@ MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_TOTAL_BYTES = 200 * 1024 * 1024
 MAX_FILES = 2000
 
-RECOGNITION_COLUMNS = ["include", "file", "kind", "target", "ligand", "seed", "recognised"]
+RECOGNITION_COLUMNS = [
+    "include", "file", "kind", "target", "ligand", "seed", "seed_source", "recognised", "filename_seed",
+]
 NOT_RECOGNISED = "no: type target and ligand"
+NO_SEED = "—"
 
 _DRIVE = re.compile(r"^[A-Za-z]:")
 
@@ -158,31 +161,66 @@ def example_files(data_dir: str | Path) -> dict[str, bytes]:
 # ------------------------------------------------------------ recognition table
 
 
-def recognition_table(filenames) -> pd.DataFrame:
-    """One row per file: what the filename says, with blanks where it says nothing."""
+def recognition_table(files) -> pd.DataFrame:
+    """One row per file: what it will be analysed as, with blanks where nothing is known.
+
+    `files` is {filename: bytes or text}. The seed shown is the one the analysis will
+    use: the log header's seed wins over the filename, as in the parser. Only the seed
+    line of each log is read here, not the whole file. `filename_seed` stays in the
+    table because the parser pairs a PDBQT with its log by filename seed.
+    """
+    parsed = {name: parse_filename(name) for name in files}
+    log_seeds = {}
+    for name, content in files.items():
+        if name.lower().endswith(".log"):
+            text = decode_text(content) if isinstance(content, bytes) else content
+            log_seeds[name] = read_log_seed(text)
+    # A PDBQT shows the seed of the log it will be paired with, if there is one.
+    paired = {
+        (p.target, p.ligand, p.seed): log_seeds[name]
+        for name, p in parsed.items()
+        if p is not None and p.kind == "log" and log_seeds.get(name) is not None
+    }
+
     rows = []
-    for name in sorted(filenames):
-        parsed = parse_filename(name)
+    for name in sorted(files):
+        name_parse = parsed[name]
+        is_log = name.lower().endswith(".log")
+        filename_seed = name_parse.seed if name_parse else None
+        if is_log and log_seeds.get(name) is not None:
+            seed, source = log_seeds[name], "log header"
+        elif not is_log and name_parse and (name_parse.target, name_parse.ligand, filename_seed) in paired:
+            seed, source = paired[(name_parse.target, name_parse.ligand, filename_seed)], "matching log"
+        elif filename_seed is not None:
+            seed, source = filename_seed, "filename"
+        else:
+            seed, source = None, "not recorded"
         rows.append(
             {
                 "include": True,
                 "file": name,
-                "kind": "pdbqt" if name.lower().endswith(".pdbqt") else "log",
-                "target": parsed.target if parsed else "",
-                "ligand": parsed.ligand if parsed else "",
-                "seed": parsed.seed if parsed else None,
-                "recognised": "yes" if parsed else NOT_RECOGNISED,
+                "kind": "log" if is_log else "pdbqt",
+                "target": name_parse.target if name_parse else "",
+                "ligand": name_parse.ligand if name_parse else "",
+                # Text, so a missing seed shows as a dash and never as "None".
+                "seed": NO_SEED if seed is None else str(seed),
+                "seed_source": source,
+                "recognised": "yes" if name_parse else NOT_RECOGNISED,
+                "filename_seed": filename_seed,
             }
         )
     table = pd.DataFrame(rows, columns=RECOGNITION_COLUMNS)
-    return table.astype({"include": "bool", "target": "str", "ligand": "str", "seed": "Int64"})
+    return table.astype(
+        {"include": "bool", "target": "str", "ligand": "str", "seed": "str", "filename_seed": "Int64"}
+    )
 
 
 def names_from_table(table: pd.DataFrame) -> tuple[dict[str, dict], list[str]]:
     """Explicit names for every included row, plus the problems that block analysis.
 
-    The seed is the one read from the filename (the column is read-only in the app).
-    The parser still prefers the seed recorded in a log, and warns if they disagree.
+    The filename seed is passed, because the parser uses it to pair a PDBQT with its
+    log; the parser then uses the log's seed when there is one, which is the seed the
+    table shows.
     """
     names, problems = {}, []
     for row in table.itertuples(index=False):
@@ -193,7 +231,7 @@ def names_from_table(table: pd.DataFrame) -> tuple[dict[str, dict], list[str]]:
         if not target or not ligand:
             problems.append(f"{row.file}: type a target and a ligand, or untick include.")
             continue
-        seed = None if pd.isna(row.seed) else int(row.seed)
+        seed = None if pd.isna(row.filename_seed) else int(row.filename_seed)
         names[row.file] = {"target": target, "ligand": ligand, "seed": seed}
     return names, problems
 

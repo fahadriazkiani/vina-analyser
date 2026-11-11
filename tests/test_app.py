@@ -16,7 +16,9 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from vina_analyser.analysis import LABELS
+import json
+
+from vina_analyser.analysis import LABELS, NOTES
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = str(ROOT / "app.py")
@@ -221,3 +223,40 @@ def test_results_are_hidden_when_the_table_no_longer_matches_the_analysis():
     assert not at.exception
     assert len(at.tabs) == 0
     assert "table has changed" in all_text(at)
+
+
+# --------------------------------------------------------- manual-check fixes
+
+
+def captions(container) -> list[str]:
+    return [element.value for element in container.caption]
+
+
+def test_summary_shows_each_note_once_and_no_seed_note(analysed):
+    shown = captions(tab(analysed, "Summary"))
+    assert shown.count(NOTES["scoring_error"]) == 1
+    assert shown.count(NOTES["affinity"]) == 1
+    assert NOTES["seed_summary"] not in shown
+
+
+def test_seed_note_is_on_the_reproducibility_tab_once(analysed):
+    shown = captions(tab(analysed, "Reproducibility"))
+    assert shown.count(NOTES["seed_summary"]) == 1
+    assert shown.count(NOTES["scoring_error"]) == 1
+
+
+def test_ligand_efficiency_is_shown_with_four_decimals(analysed):
+    element = next(
+        e for e in tab(analysed, "Summary").dataframe if LABELS["ligand_efficiency"] in e.value.columns
+    )
+    config = json.loads(element.proto.columns)
+    assert config[LABELS["ligand_efficiency"]]["type_config"]["format"] == "%.4f"
+
+
+def test_recognition_table_shows_the_log_seed():
+    at = fresh()
+    button(at, "load_example").click().run()
+    table = next(frame for frame in frames(at) if "recognised" in frame.columns).set_index("file")
+    assert table.loc["1iep__imatinib_1iep.log", "seed"] == "42"
+    assert table.loc["1iep__imatinib_1iep.log", "seed_source"] == "log header"
+    assert "None" not in set(table["seed"])

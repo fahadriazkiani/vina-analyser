@@ -167,11 +167,43 @@ def test_recognition_table_columns_and_rows():
 def test_recognition_reads_target_ligand_and_seed_from_the_name():
     table = recognition_table({"1iep__imatinib_1iep_seed2_out.pdbqt": b"", "5x72__p59_5x72.log": b""})
     rows = table.set_index("file")
-    assert rows.loc["1iep__imatinib_1iep_seed2_out.pdbqt", ["kind", "target", "ligand", "seed"]].tolist() == [
-        "pdbqt", "1iep", "imatinib_1iep", 2,
+    assert rows.loc["1iep__imatinib_1iep_seed2_out.pdbqt", ["kind", "target", "ligand", "seed", "seed_source"]].tolist() == [
+        "pdbqt", "1iep", "imatinib_1iep", "2", "filename",
     ]
     assert rows.loc["5x72__p59_5x72.log", "kind"] == "log"
-    assert pd.isna(rows.loc["5x72__p59_5x72.log", "seed"])
+    # An empty log records no seed: shown as a dash, never as "None" or a guess.
+    assert rows.loc["5x72__p59_5x72.log", ["seed", "seed_source"]].tolist() == ["—", "not recorded"]
+
+
+def test_recognition_shows_the_seed_the_analysis_will_use():
+    # The log's seed wins in the parser, so the table must show it too, otherwise it
+    # contradicts the Summary table (blank here, 42 there).
+    rows = recognition_table(real_files()).set_index("file")
+    assert rows.loc["1iep__imatinib_1iep.log", ["seed", "seed_source"]].tolist() == ["42", "log header"]
+    assert rows.loc["1iep__imatinib_1iep_out.pdbqt", ["seed", "seed_source"]].tolist() == ["42", "matching log"]
+    assert rows.loc["1iep__imatinib_1iep_seed2.log", ["seed", "seed_source"]].tolist() == ["2", "log header"]
+    assert set(rows["seed_source"]) == {"log header", "matching log"}
+
+
+def test_seed_column_never_prints_none():
+    table = recognition_table({**real_files(), "run7.pdbqt": b"", "1iep__x_out.pdbqt": b""})
+    assert not table["seed"].isin(["None", "nan", "<NA>", ""]).any()
+    assert table.set_index("file").loc["run7.pdbqt", "seed"] == "—"
+
+
+def test_shown_seed_matches_the_seed_after_parsing():
+    files = {name: data.decode() for name, data in real_files().items()}
+    table = recognition_table(files)
+    names, _ = names_from_table(table)
+    runs = load_results(files, names=names).runs
+    parsed = {
+        file: str(int(seed))
+        for _, run in runs.iterrows()
+        for file, seed in ((run["pdbqt_file"], run["seed"]), (run["log_file"], run["seed"]))
+        if file
+    }
+    shown = dict(zip(table["file"], table["seed"]))
+    assert shown == parsed
 
 
 def test_unrecognised_name_is_left_blank_not_guessed():

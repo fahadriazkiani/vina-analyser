@@ -214,8 +214,8 @@ def main() -> None:
             "Target, ligand and seed are read from names like "
             "`<target>__<ligand>[_seedN]_out.pdbqt` and `.log`. Correct any row, type names "
             "where the filename was not recognised, or untick **include**. "
-            "**Exactly what this table shows is what gets analysed.** The seed column is "
-            "read-only: when a log records a seed, the log's value is used."
+            "**Exactly what this table shows is what gets analysed.** The seed is read-only: "
+            "it comes from the log header when there is one, otherwise from the filename."
         )
         key = content_key(data["files"])
         edited = st.data_editor(
@@ -223,10 +223,12 @@ def main() -> None:
             key=f"editor_{key}",
             hide_index=True,
             width="stretch",
-            disabled=["file", "kind", "seed", "recognised"],
+            disabled=["file", "kind", "seed", "seed_source", "recognised"],
+            column_order=[c for c in inputs.RECOGNITION_COLUMNS if c != "filename_seed"],
             column_config={
                 "include": st.column_config.CheckboxColumn("include"),
-                "seed": st.column_config.NumberColumn("seed (from filename)", format="%d"),
+                "seed": st.column_config.TextColumn("seed used"),
+                "seed_source": st.column_config.TextColumn("seed from"),
             },
         )
         names, problems = inputs.names_from_table(edited)
@@ -277,10 +279,15 @@ def show_results(results: ParsedResults, data: dict) -> None:
         if best.empty:
             st.info("No pose has coordinates, so there is nothing to rank. Upload the output PDBQT files.")
         else:
-            st.caption(analysis.NOTES["affinity"])
-            st.dataframe(best_view(best), hide_index=True, width="stretch")
-            show_notes(result.notes)
-            st.caption(analysis.NOTES["scoring_error"])
+            st.dataframe(
+                best_view(best), hide_index=True, width="stretch",
+                column_config={
+                    # Fixed decimals: otherwise 0.3190 shows as 0.319 beside 0.3587.
+                    analysis.LABELS["ligand_efficiency"]: st.column_config.NumberColumn(format="%.4f"),
+                },
+            )
+            # The seed note belongs with the seed table on the Reproducibility tab.
+            show_notes(note for note in result.notes if note != analysis.NOTES["seed_summary"])
         st.subheader("Runs")
         st.caption(
             "Vina logs list every mode, but the output PDBQT only keeps poses within "
