@@ -72,6 +72,26 @@ def test_two_loose_files_with_one_name_are_refused():
         read_uploads([("a__b.log", b"1"), ("a__b.log", b"2")])
 
 
+def test_too_many_loose_files_are_refused(monkeypatch):
+    # The same limits as for a zip: loose uploads must not be a way around them.
+    import vina_analyser.inputs as inputs
+
+    monkeypatch.setattr(inputs, "MAX_FILES", 3)
+    items = [(f"t__l{i}.log", b"x") for i in range(4)]
+    with pytest.raises(InputRefused, match="4 files; the limit is 3"):
+        read_uploads(items)
+    assert len(read_uploads(items[:3]).files) == 3
+
+
+def test_loose_files_over_the_total_size_are_refused(monkeypatch):
+    import vina_analyser.inputs as inputs
+
+    monkeypatch.setattr(inputs, "MAX_TOTAL_BYTES", 100)
+    with pytest.raises(InputRefused, match="more than"):
+        read_uploads([("t__a.log", b"x" * 60), ("t__b.log", b"x" * 60)])
+    assert len(read_uploads([("t__a.log", b"x" * 50), ("t__b.log", b"x" * 50)]).files) == 2
+
+
 def test_nothing_usable_is_refused():
     with pytest.raises(InputRefused, match="No .pdbqt or .log"):
         read_uploads([("notes.docx", b"z")])
@@ -329,3 +349,12 @@ def test_theme_is_light_and_uses_the_figure_blue():
     assert theme["base"] == "light"
     assert theme["primaryColor"].upper() == BAR_COLOUR.upper()
     assert theme["backgroundColor"].upper() == "#FFFFFF"
+
+
+def test_streamlit_security_defaults_are_not_switched_off():
+    # XSRF protection guards the upload endpoint; Streamlit enables it by default.
+    config = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+    server = config.get("server", {})
+    assert server.get("enableXsrfProtection", True) is True
+    assert server.get("enableCORS", True) is True
+    assert config.get("browser", {}).get("gatherUsageStats") is False

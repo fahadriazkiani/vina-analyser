@@ -68,6 +68,13 @@ def read_uploads(items: list[tuple[str, bytes]]) -> Upload:
             )
         return _check(_read_zip(items[0][1]))
 
+    # The same limits as a zip: Streamlit caps each file, not how many there are.
+    if len(items) > MAX_FILES:
+        raise InputRefused(f"The upload holds {len(items)} files; the limit is {MAX_FILES}.")
+    total = sum(len(data) for _, data in items)
+    if total > MAX_TOTAL_BYTES:
+        raise InputRefused(f"The files add up to more than {MAX_TOTAL_BYTES // 2**20} MB, the limit.")
+
     upload = Upload()
     for name, data in items:
         name = PurePosixPath(name.replace("\\", "/")).name
